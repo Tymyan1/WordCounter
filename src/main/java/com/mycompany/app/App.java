@@ -60,6 +60,7 @@ public class App
     	    	
     		} catch (VydraNoChunkFilesFoundException e) {
     			System.out.println("Finished");
+    			break;
     		} catch (InterruptedException e) {
 				System.out.println("Interrupted");
 				e.printStackTrace();
