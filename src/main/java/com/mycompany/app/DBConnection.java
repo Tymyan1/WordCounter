@@ -75,15 +75,18 @@ public class DBConnection {
 		int j = 0; // chunk file it
     	try(BufferedReader bufferedReader = new BufferedReader(new FileReader(file), bufferSize)) {
     		String line = bufferedReader.readLine();
+    		int numOfLines = 0;
     		StringBuilder lines = new StringBuilder();
     	    while(line != null) {
     	    	lines.append(line);
-    	    	lines.append(System.lineSeparator()); // \n gets dropped 
+    	    	lines.append(System.lineSeparator()); // \n gets dropped
+    	    	numOfLines++;
     	    	if(i++ >= linesPerFile) {
     	    		// upload file
-    	    		uploadChunkFile(lines.toString(), file.getName(), j++);
+    	    		uploadChunkFile(lines.toString(), numOfLines, file.getName(), j++);
     	    		i = 0; // reset counter
     	    		lines = new StringBuilder();
+    	    		numOfLines = 0;
     	    	}
     	        line = bufferedReader.readLine();
     	    }
@@ -100,20 +103,20 @@ public class DBConnection {
 		MongoCollection<Document> metaCol = this.db.getCollection(META_FILES);
 		
 		// find unused file
-		Document fileMeta = metaCol.find(new Document("used", 0)).first();
+		Document fileMeta = metaCol.find(new Document("downloaded", 0)).first();
 		if(fileMeta == null) {
 			// find a file already being processed
-			fileMeta = metaCol.find(new Document("returned", 0)).first();
+			fileMeta = metaCol.find(new Document("processed", 0)).first();
 			if(fileMeta == null) {
 				// there's nothing more to do
 				//TODO actually maybe stats?
-				throw new VydraNoChunkFilesFoundException("No unused and unreturned chunk files remaining");		
+				throw new VydraNoChunkFilesFoundException("No not-yet-downloaded and processed chunk files remaining");		
 			}
 		}
 		ObjectId fileId = (ObjectId)fileMeta.get("id");
 		
 		// update the info
-		metaCol.updateMany(fileMeta, new Document("$inc", new Document("used", 1)));
+		metaCol.updateOne(fileMeta, new Document("$inc", new Document("downloaded", 1)));
 		
 		GridFSBucket gridFSBucket = GridFSBuckets.create(this.db, fileName);		
 		// get the chunk file
@@ -149,30 +152,32 @@ public class DBConnection {
 			//TODO what to do if results already computed? save a duplicate in case they differ and let the 'merge-results' method decide?
 			System.out.println("Results document already exists ( id: " + existingResult.get("_id") + ")");
 		}
-		// updates the returned meta
-		this.db.getCollection(META_FILES).findOneAndUpdate(file.toDocument(), new Document("$inc", new Document("returned", 1)));
+		// updates the processed meta
+		this.db.getCollection(META_FILES).findOneAndUpdate(file.toDocument(), new Document("$inc", new Document("processed", 1)));
 		
 		// clear the map
 		//TODO change this once adding support for multiple chunk files
 		ProcessThread.reduceMap.clear();
 	}
+
 	
-	private void uploadChunkFile(String lines, String fileName, int it) {
+	private void uploadChunkFile(String lines, int numOfLines, String fileName, int it) {
 		try {
 			GridFSBucket gridFSBucket = GridFSBuckets.create(this.db, fileName);
 			InputStream stream = new ByteArrayInputStream(lines.getBytes("UTF-8") );
 		    // Create some custom options
 		    GridFSUploadOptions options = new GridFSUploadOptions()
 		                                        .metadata(new Document("origFileName", fileName)
-		                                        						.append("used", 0) //TODO currently unused cause cannot easily update later
-		                                        						.append("returned", 0));
+		                                        			.append("numOfLines", numOfLines));
 
 		    ObjectId fileId = gridFSBucket.uploadFromStream(fileName + it, stream, options);
 		    
 		    // saves the record of processing
 		    this.db.getCollection(META_FILES).insertOne(new Document("id", fileId)
-															.append("used", 0)
-															.append("returned", 0));
+		    												.append("numOfLines", numOfLines)
+		    												.append("origFileName", fileName)
+															.append("downloaded", 0)
+															.append("processed", 0));
 		} catch (UnsupportedEncodingException e) {
 			// this should not be ever thrown
 			e.printStackTrace();

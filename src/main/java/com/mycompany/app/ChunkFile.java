@@ -4,25 +4,16 @@ import org.bson.types.ObjectId;
 
 public class ChunkFile {
 
-	private ObjectId id;
 	private String content;
-	private int numOfLines;
+	private ChunkFileMeta fileMeta;
 	
 	public ChunkFile(ObjectId id, String content) {
-		this.id = id;
+		this.fileMeta = new ChunkFileMeta(id);
 		this.content = content;
 	}
 
 	public ChunkFileMeta getFileMeta() {
-		return new ChunkFileMeta(this.id, this.numOfLines);
-	}
-	
-	public ObjectId getId() {
-		return id;
-	}
-
-	public void setId(ObjectId id) {
-		this.id = id;
+		return this.fileMeta;
 	}
 
 	public String getContent() {
@@ -33,17 +24,9 @@ public class ChunkFile {
 		this.content = content;
 	}
 
-	public int getNumOfLines() {
-		return numOfLines;
-	}
-
-	public void setNumOfLines(int numOfLines) {
-		this.numOfLines = numOfLines;
-	}
-	
 	@Override
 	public String toString() {
-		return "ChunkFile{id: " + id + ", numOfLines: " + numOfLines + ", content: " + content + "}";
+		return "ChunkFile{fileMeta: " + fileMeta + ", content: " + content + "}";
 	}
 	
 }

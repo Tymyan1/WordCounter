@@ -46,9 +46,10 @@ public class App
     		try {
     			System.out.println("Getting next ChunkFile");
     			ChunkFile fileToProcess = db.getNextChunkFile("kody_k_hram.txt");
-    	    	fileToProcess.setNumOfLines(splitLines(fileToProcess));
+    	    	fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
     	    	
-    	    	ProcessThread.linesCounter.put(fileToProcess.getFileMeta(), 0);
+    	    	ProcessThread.linesCounter.put(fileToProcess.getFileMeta(), 0); //TODO is this needed?
+    	    	
     	    	System.out.println(fileToProcess.getFileMeta());
     	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
     	    		Thread.sleep(1000);
