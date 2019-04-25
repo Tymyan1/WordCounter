@@ -24,7 +24,7 @@ public class ChunkFileMeta {
 		this.id = id;
 		this.numOfLines = numOfLines;
 	}
-	
+
 	public Document toDocument() {
 		return new Document("id", this.id).append("numOfLines", numOfLines).append("originalFileName", originalFileName);
 	}

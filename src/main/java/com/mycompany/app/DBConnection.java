@@ -11,6 +11,7 @@ import com.mongodb.client.gridfs.model.GridFSFile;
 import com.mongodb.client.gridfs.model.GridFSUploadOptions;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
 import com.mongodb.BasicDBObject;
 import com.mongodb.Block;
 import static com.mongodb.client.model.Filters.eq;
@@ -28,7 +29,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -44,6 +49,7 @@ public class DBConnection {
 	private static final String BUCKET_NAME = "wordfiles";
 	private static final String RESULTS_COLLECTION = "results";
 	private static final String META_FILES = "metafiles";
+	private static final String FINAL_RESULTS = "final_results";
 	
 	public DBConnection(String uri) {
 		this.URI = uri;
@@ -130,7 +136,10 @@ public class DBConnection {
 			int fileLength = (int) downloadStream.getGridFSFile().getLength();
 			byte[] bytesToWriteTo = new byte[fileLength];
 			downloadStream.read(bytesToWriteTo);
-			return new ChunkFile(id, new String(bytesToWriteTo, StandardCharsets.UTF_8));
+			
+			ChunkFile chunkFile = new ChunkFile(id, new String(bytesToWriteTo, StandardCharsets.UTF_8));
+			chunkFile.getFileMeta().setOriginalFileName(fileName);
+			return chunkFile;
 		}
 	}
 	
@@ -153,13 +162,52 @@ public class DBConnection {
 			System.out.println("Results document already exists ( id: " + existingResult.get("_id") + ")");
 		}
 		// updates the processed meta
-		this.db.getCollection(META_FILES).findOneAndUpdate(file.toDocument(), new Document("$inc", new Document("processed", 1)));
+		this.db.getCollection(META_FILES).findOneAndUpdate(file.toIdDocument(), new Document("$inc", new Document("processed", 1)));
 		
 		// clear the map
 		//TODO change this once adding support for multiple chunk files
 		ProcessThread.reduceMap.clear();
 	}
 
+	public void finalReduce(String fileName) {
+		// get all the chunkfile meta documents
+		FindIterable<Document> chunkFileMetas = this.db.getCollection(META_FILES).find(new Document("origFileName", fileName));
+   
+        //TODO maybe get the ids directly from gridfs?
+        // get all the chunkfile ids
+        List<ObjectId> ids = new ArrayList<>();
+        chunkFileMetas.forEach(new Block<Document>(){
+			@Override
+			public void apply(Document doc) {
+				ids.add((ObjectId)doc.get("id"));
+			}
+        });
+        
+        // download all the relevant results
+        FindIterable<Document> resultsIt = this.db.getCollection(RESULTS_COLLECTION).find(new Document("fileId", new Document("$in", ids)));
+        // into list
+        List<Document> results = new ArrayList<>();
+        resultsIt.into(results);
+        
+        //TODO test whether it's faster or not as compared to just using a Document and/or find a better conversion
+        // final reduce into map
+        Map<String, Integer> finalReduceMap = new HashMap<>();
+        for(Document doc : results) {
+        	for(String word : doc.keySet()) {
+        		if(!("_id".equals(word) || "fileId".equals(word))) {
+        			finalReduceMap.merge(word, 1, (oldValue, one) -> oldValue + one);
+        		}
+        	}
+        }
+        
+        // into document
+        Document finalResults = new Document("_origFileName", fileName);
+        for(String key : finalReduceMap.keySet()) {
+        	finalResults.append(key, finalReduceMap.get(key));
+        }
+        // TODO check for duplicity?
+        this.db.getCollection(FINAL_RESULTS).insertOne(finalResults);
+	}
 	
 	private void uploadChunkFile(String lines, int numOfLines, String fileName, int it) {
 		try {

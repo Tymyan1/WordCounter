@@ -61,6 +61,7 @@ public class App
     	    	
     		} catch (VydraNoChunkFilesFoundException e) {
     			System.out.println("Finished");
+    			db.finalReduce("kody_k_hram.txt");
     			break;
     		} catch (InterruptedException e) {
 				System.out.println("Interrupted");
