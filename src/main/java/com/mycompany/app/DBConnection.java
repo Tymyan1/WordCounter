@@ -84,6 +84,11 @@ public class DBConnection {
     		int numOfLines = 0;
     		StringBuilder lines = new StringBuilder();
     	    while(line != null) {
+    	    	// don't bother with empty lines
+    	    	line = line.trim();
+    	    	if("".equals(line)) continue;
+    	    	
+    	    	line = line.toLowerCase();
     	    	lines.append(line);
     	    	lines.append(System.lineSeparator()); // \n gets dropped
     	    	numOfLines++;
