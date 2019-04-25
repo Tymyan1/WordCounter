@@ -83,6 +83,7 @@ public class DBConnection {
     	    		// upload file
     	    		uploadChunkFile(lines.toString(), file.getName(), j++);
     	    		i = 0; // reset counter
+    	    		lines = new StringBuilder();
     	    	}
     	        line = bufferedReader.readLine();
     	    }
