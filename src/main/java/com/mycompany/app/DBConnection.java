@@ -147,7 +147,6 @@ public class DBConnection {
 			}
 		}
 		ObjectId fileId = (ObjectId)fileMeta.get("id");
-		System.out.println(fileId);
 		
 		// update the info
 		this.colMetaFiles.updateOne(fileMeta, new Document("$inc", new Document("downloaded", 1)));

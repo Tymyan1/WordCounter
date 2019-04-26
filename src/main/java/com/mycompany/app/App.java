@@ -21,7 +21,6 @@ public class App
 	// future args
 	private static final String URI = "mongodb://localhost:27017";
 	private static final String FILE = "D:/kody_k_hram.txt";
-	private static final boolean useChecksum = true;
 	
 	
     public static void main( String[] args )
@@ -44,7 +43,6 @@ public class App
 	    	// upload file and see results
 	    	if(FILE != null && !"".equals(FILE.trim())) {
 	    		File file = new File(FILE);
-//		    	String fileName = file.getName(); 
 		    	
 		    	String checksum = db.uploadFile(file);
 		    	
@@ -94,7 +92,7 @@ public class App
     			ChunkFile fileToProcess = db.getNextChunkFile(checksum);
     	    	fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
     	    	
-    	    	ProcessThread.linesCounter.put(fileToProcess.getFileMeta(), 0); //TODO make this prettier
+    	    	ProcessThread.linesCounter.put(fileToProcess.getFileMeta(), 0);
     	    	
 //    	    	System.out.println(fileToProcess.getFileMeta());
     	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
