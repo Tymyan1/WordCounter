@@ -28,7 +28,7 @@ public class ChunkFileMeta {
 
 	public ChunkFileMeta(Document doc) {
 		super();
-		this.id = fieldTransform(Integer.class, "id", doc);
+		this.id = fieldTransform(ObjectId.class, "id", doc);
 		this.numOfLines = fieldTransform(Integer.class, "numOfLines", doc);
 		this.checksum = fieldTransform(String.class, "checksum", doc);
 		this.downloaded = fieldTransform(Integer.class, "downloaded", doc);

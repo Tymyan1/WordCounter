@@ -15,10 +15,10 @@ public class ProcessThread implements Runnable {
 	public static final BlockingQueue<Pair<ChunkFileMeta, String>> linesToProcess = new LinkedBlockingQueue<>();
 	public static final Map<String, Integer> reduceMap = new ConcurrentHashMap<>();
 	public static final Map<ChunkFileMeta, Integer> linesCounter = new ConcurrentHashMap<>();
-	
+
 	@Override
 	public void run() {
-		while(true) {
+		while(!(Thread.currentThread().isInterrupted())) {
 			// count words in the line
 			Pair<ChunkFileMeta, String> pair;
 			try {
@@ -35,10 +35,8 @@ public class ProcessThread implements Runnable {
 					linesCounter.merge(pair.getFirst(), 1, (oldValue, one) -> oldValue + one);
 				}
 			} catch (InterruptedException e) {
-				// shouldn't happen
-				e.printStackTrace();
+                Thread.currentThread().interrupt();
 			}
 		}
 	}
-
 }

@@ -11,7 +11,7 @@ public class ChunkFile {
 		this.fileMeta = new ChunkFileMeta(id);
 		this.content = content;
 	}
-
+	
 	public ChunkFileMeta getFileMeta() {
 		return this.fileMeta;
 	}

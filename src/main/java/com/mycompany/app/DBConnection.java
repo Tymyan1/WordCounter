@@ -194,7 +194,7 @@ public class DBConnection {
 		ProcessThread.reduceMap.clear();
 	}
 
-	public void finalReduce(String checksum) {
+	public Document finalReduce(String checksum) {
 		// get all the chunkfile meta documents
 		FindIterable<Document> chunkFileMetas = this.colMetaFiles.find(new Document("checksum", checksum));
    
@@ -232,8 +232,19 @@ public class DBConnection {
         }
         // TODO check for duplicity?
         this.colFinalResults.insertOne(finalResults);
+        
+        return finalResults;
 	}
 	
+	/**
+	 * 
+	 * @param checksum
+	 * @return Final results Document or null if final results not present for given checksum
+	 */
+	public Document getFinalResults(String checksum) {
+		Document doc = this.colFinalResults.find(new Document("_fileChecksum", checksum)).first();
+		return doc;
+	}
 	
 	public ChunkFileMeta getNextTargetFile() {
 		// get the next chunk file not being processed
@@ -241,6 +252,10 @@ public class DBConnection {
 		if(meta == null) {
 			// get the next chunk file not yet processed
 			meta = this.colMetaFiles.find(new Document("processed", 0)).first();
+			if(meta == null) {
+				// there's nothing more to process!
+				return null;
+			}
 		}
 		ChunkFileMeta metaFile = new ChunkFileMeta(meta);
 		return metaFile;
