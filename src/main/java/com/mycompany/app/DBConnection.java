@@ -234,6 +234,18 @@ public class DBConnection {
         this.colFinalResults.insertOne(finalResults);
 	}
 	
+	
+	public ChunkFileMeta getNextTargetFile() {
+		// get the next chunk file not being processed
+		Document meta = this.colMetaFiles.find(new Document("downloaded", 0)).first();
+		if(meta == null) {
+			// get the next chunk file not yet processed
+			meta = this.colMetaFiles.find(new Document("processed", 0)).first();
+		}
+		ChunkFileMeta metaFile = new ChunkFileMeta(meta);
+		return metaFile;
+	}
+	
 	private void uploadChunkFile(String lines, int numOfLines, String checksum, int it) {
 		try {
 			InputStream stream = new ByteArrayInputStream(lines.getBytes("UTF-8") );

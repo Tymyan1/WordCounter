@@ -53,7 +53,7 @@ public class App
 	    			ChunkFile fileToProcess = db.getNextChunkFile(checksum);
 	    	    	fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
 	    	    	
-	    	    	ProcessThread.linesCounter.put(fileToProcess.getFileMeta(), 0); //TODO is this needed?
+	    	    	ProcessThread.linesCounter.put(fileToProcess.getFileMeta(), 0); //TODO make this prettier
 	    	    	
 	    	    	System.out.println(fileToProcess.getFileMeta());
 	    	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
