@@ -29,11 +29,17 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import javax.xml.bind.DatatypeConverter;
 
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -63,22 +69,32 @@ public class DBConnection {
 		} catch (Exception e) { //TODO better exceptions 
 			e.printStackTrace();
 		}
-    	
-    	
-//        MongoCollection<Document> col = database.getCollection("myTestCollection");
 	}
 	
-	public void uploadFile(String path) {
-		//TODO checksums
-//		String hash = MD5.asHex(MD5.getHash(new File(filename)));
-		File file = new File(path);
+	public boolean fileUploaded(String checksum) {
+		//TODO maybe a bit more throughout checking? e.g. failed mid upload?
+		Document doc = this.db.getCollection(META_FILES).find(new Document("checksum", checksum)).first();
+		return doc != null;
+	}
+	
+	public String uploadFile(File file) throws IOException {
+		
+		System.out.println("Calculating the checksum");
+		String checksum = Util.getChecksum(file.getAbsolutePath());
+  
+		if(fileUploaded(checksum)) {
+			System.out.println("File already seems to be uploaded!");
+			return checksum;
+		}
+		
+		System.out.println("Uploading file");
 		
 		final int linesPerFile = 2;
-		final int bufferSize = 8 * 1024;
+		final int bufferSize = 8 * 1024;		
 		
 		// start reading the file
 		int i = 0;
-		int j = 0; // chunk file it
+		int j = 0; // chunk file iterator
     	try(BufferedReader bufferedReader = new BufferedReader(new FileReader(file), bufferSize)) {
     		String line = bufferedReader.readLine();
     		int numOfLines = 0;
@@ -86,30 +102,34 @@ public class DBConnection {
     	    while(line != null) {
     	    	// don't bother with empty lines
     	    	line = line.trim();
-    	    	if("".equals(line)) continue;
+    	    	if("".equals(line)) {
+    	    		line = bufferedReader.readLine();
+    	    		continue;
+    	    	}
     	    	
     	    	line = line.toLowerCase();
     	    	lines.append(line);
     	    	lines.append(System.lineSeparator()); // \n gets dropped
     	    	numOfLines++;
-    	    	if(i++ >= linesPerFile) {
+    	    	if(numOfLines >= linesPerFile) {
     	    		// upload file
-    	    		uploadChunkFile(lines.toString(), numOfLines, file.getName(), j++);
-    	    		i = 0; // reset counter
+    	    		uploadChunkFile(lines.toString(), numOfLines, checksum, j++);
+    	    		// reset counters
+    	    		i = 0; 
     	    		lines = new StringBuilder();
     	    		numOfLines = 0;
     	    	}
     	        line = bufferedReader.readLine();
     	    }
+    	    return checksum;
     	} catch (FileNotFoundException e) {
-    		System.out.println("File not found");
-			e.printStackTrace();
+			throw e;
 		} catch (IOException e) {
-			e.printStackTrace();
+			throw e;
 		}
 	}
 	
-	public ChunkFile getNextChunkFile(String fileName) {
+	public ChunkFile getNextChunkFile(String checksum) {
 		
 		MongoCollection<Document> metaCol = this.db.getCollection(META_FILES);
 		
@@ -125,13 +145,14 @@ public class DBConnection {
 			}
 		}
 		ObjectId fileId = (ObjectId)fileMeta.get("id");
+		System.out.println(fileId);
 		
 		// update the info
 		metaCol.updateOne(fileMeta, new Document("$inc", new Document("downloaded", 1)));
 		
-		GridFSBucket gridFSBucket = GridFSBuckets.create(this.db, fileName);		
+		GridFSBucket gridFSBucket = GridFSBuckets.create(this.db, BUCKET_NAME);		
 		// get the chunk file
-		GridFSFindIterable found = gridFSBucket.find(new BasicDBObject("_id", fileId));
+		GridFSFindIterable found = gridFSBucket.find(new Document("_id", fileId));
 		GridFSFile file = found.first();
 		ObjectId id = file.getObjectId();
 		
@@ -143,7 +164,7 @@ public class DBConnection {
 			downloadStream.read(bytesToWriteTo);
 			
 			ChunkFile chunkFile = new ChunkFile(id, new String(bytesToWriteTo, StandardCharsets.UTF_8));
-			chunkFile.getFileMeta().setOriginalFileName(fileName);
+			chunkFile.getFileMeta().setChecksum(checksum);
 			return chunkFile;
 		}
 	}
@@ -174,9 +195,9 @@ public class DBConnection {
 		ProcessThread.reduceMap.clear();
 	}
 
-	public void finalReduce(String fileName) {
+	public void finalReduce(String checksum) {
 		// get all the chunkfile meta documents
-		FindIterable<Document> chunkFileMetas = this.db.getCollection(META_FILES).find(new Document("origFileName", fileName));
+		FindIterable<Document> chunkFileMetas = this.db.getCollection(META_FILES).find(new Document("checksum", checksum));
    
         //TODO maybe get the ids directly from gridfs?
         // get all the chunkfile ids
@@ -206,7 +227,7 @@ public class DBConnection {
         }
         
         // into document
-        Document finalResults = new Document("_origFileName", fileName);
+        Document finalResults = new Document("_fileChecksum", checksum);
         for(String key : finalReduceMap.keySet()) {
         	finalResults.append(key, finalReduceMap.get(key));
         }
@@ -214,21 +235,22 @@ public class DBConnection {
         this.db.getCollection(FINAL_RESULTS).insertOne(finalResults);
 	}
 	
-	private void uploadChunkFile(String lines, int numOfLines, String fileName, int it) {
+	private void uploadChunkFile(String lines, int numOfLines, String checksum, int it) {
 		try {
-			GridFSBucket gridFSBucket = GridFSBuckets.create(this.db, fileName);
+			GridFSBucket gridFSBucket = GridFSBuckets.create(this.db, BUCKET_NAME);
 			InputStream stream = new ByteArrayInputStream(lines.getBytes("UTF-8") );
 		    // Create some custom options
 		    GridFSUploadOptions options = new GridFSUploadOptions()
-		                                        .metadata(new Document("origFileName", fileName)
+		                                        .metadata(new Document("checksum", checksum)
 		                                        			.append("numOfLines", numOfLines));
 
-		    ObjectId fileId = gridFSBucket.uploadFromStream(fileName + it, stream, options);
+		    ObjectId fileId = gridFSBucket.uploadFromStream(checksum + "_" + it, stream, options);
 		    
-		    // saves the record of processing
+		    // saves the metas
 		    this.db.getCollection(META_FILES).insertOne(new Document("id", fileId)
 		    												.append("numOfLines", numOfLines)
-		    												.append("origFileName", fileName)
+		    												.append("checksum", checksum)
+//		    												.append("origFileName", fileName)
 															.append("downloaded", 0)
 															.append("processed", 0));
 		} catch (UnsupportedEncodingException e) {

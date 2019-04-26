@@ -10,7 +10,8 @@ public class ChunkFileMeta {
 
 	private ObjectId id;
 	private int numOfLines;
-	private String originalFileName;
+//	private String originalFileName;
+	private String checksum;
 	private int downloaded;
 	private int processed;
 	
@@ -26,7 +27,7 @@ public class ChunkFileMeta {
 	}
 
 	public Document toDocument() {
-		return new Document("id", this.id).append("numOfLines", numOfLines).append("originalFileName", originalFileName);
+		return new Document("id", this.id).append("numOfLines", numOfLines).append("checksum", checksum);
 	}
 	
 	public Document toIdDocument() {
@@ -46,14 +47,23 @@ public class ChunkFileMeta {
 		this.numOfLines = numOfLines;
 	}
 	
-	public String getOriginalFileName() {
-		return originalFileName;
+//	public String getOriginalFileName() {
+//		return originalFileName;
+//	}
+//
+//	public void setOriginalFileName(String originalFileName) {
+//		this.originalFileName = originalFileName;
+//	}
+	
+	public String getChecksum() {
+		return checksum;
 	}
 
-	public void setOriginalFileName(String originalFileName) {
-		this.originalFileName = originalFileName;
+	public void setChecksum(String checksum) {
+		this.checksum = checksum;
 	}
 	
+		
 	public int getDownloaded() {
 		return downloaded;
 	}
@@ -72,7 +82,7 @@ public class ChunkFileMeta {
 
 	@Override
 	public String toString() {
-		return "ChunkFileMeta{id: " + id + ", originalFileName: " + originalFileName + ", numOfLines: " + numOfLines + "}";
+		return "ChunkFileMeta{id: " + id + ", checksum: " + checksum + ", numOfLines: " + numOfLines + "}";
 	}
 	
 	@Override

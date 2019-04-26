@@ -20,55 +20,65 @@ public class App
 	// future args
 	private static final String URI = "mongodb://localhost:27017";
 	private static final String FILE = "D:/kody_k_hram.txt";
+	private static final boolean useChecksum = true;
 	
 	
     public static void main( String[] args )
     {
-    	
-    	DBConnection db = new DBConnection(URI);
-    	List<Thread> processThreads = new ArrayList<>();
-    	for(int i = 0; i < ProcessThread.NUM_OF_PROCESS_THREADS; i++) {
-    		processThreads.add(new Thread(new ProcessThread()));
+    	try {
+	    	DBConnection db = new DBConnection(URI);
+	    	List<Thread> processThreads = new ArrayList<>();
+	    	for(int i = 0; i < ProcessThread.NUM_OF_PROCESS_THREADS; i++) {
+	    		processThreads.add(new Thread(new ProcessThread()));
+	    	}
+	    	
+	    	File file = new File(FILE);
+	    	String fileName = file.getName(); 
+	    	
+	    	System.out.println("Running process threads");
+	    	for(Thread t : processThreads) {
+	    		t.start();
+	    	}
+	    	
+	    	System.out.println("Connecting to db");
+	    	db.connect();
+	    	
+			String checksum = db.uploadFile(file);
+	    	
+	    	
+	    	System.out.println("File uploaded");
+	    	while(true) {
+	    		try {
+	    			System.out.println("Getting next ChunkFile");
+	    			ChunkFile fileToProcess = db.getNextChunkFile(checksum);
+	    	    	fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
+	    	    	
+	    	    	ProcessThread.linesCounter.put(fileToProcess.getFileMeta(), 0); //TODO is this needed?
+	    	    	
+	    	    	System.out.println(fileToProcess.getFileMeta());
+	    	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
+	    	    		Thread.sleep(1000);
+	    	    	}
+	    	    	
+	    	    	System.out.println("Writing results to db");
+	    	    	db.writeReducedResultsToDB(fileToProcess.getFileMeta());
+	    	    	System.out.println("Processed ChunkFile");
+	    	    	
+	    		} catch (VydraNoChunkFilesFoundException e) {
+	    			System.out.println("Finished");
+	    			db.finalReduce(checksum);
+	    			break;
+	    		} catch (InterruptedException e) {
+					System.out.println("Interrupted");
+					e.printStackTrace();
+				}
+	    	}
+    	} catch (FileNotFoundException e) {
+    		System.out.println("File not found, please check the path given");
+    		e.printStackTrace();
+    	} catch (IOException e) {
+    		e.printStackTrace();
     	}
-    	
-    	System.out.println("Running process threads");
-    	for(Thread t : processThreads) {
-    		t.start();
-    	}
-    	
-    	System.out.println("Connecting to db");
-    	db.connect();
-    	System.out.println("Uploading the file");
-    	db.uploadFile(FILE);
-    	
-    	System.out.println("File uploaded");
-    	while(true) {
-    		try {
-    			System.out.println("Getting next ChunkFile");
-    			ChunkFile fileToProcess = db.getNextChunkFile("kody_k_hram.txt");
-    	    	fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
-    	    	
-    	    	ProcessThread.linesCounter.put(fileToProcess.getFileMeta(), 0); //TODO is this needed?
-    	    	
-    	    	System.out.println(fileToProcess.getFileMeta());
-    	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
-    	    		Thread.sleep(1000);
-    	    	}
-    	    	
-    	    	System.out.println("Writing results to db");
-    	    	db.writeReducedResultsToDB(fileToProcess.getFileMeta());
-    	    	System.out.println("Processed ChunkFile");
-    	    	
-    		} catch (VydraNoChunkFilesFoundException e) {
-    			System.out.println("Finished");
-    			db.finalReduce("kody_k_hram.txt");
-    			break;
-    		} catch (InterruptedException e) {
-				System.out.println("Interrupted");
-				e.printStackTrace();
-			}
-    	}
-    	
     }
     
     // splits the file into lines and feeds them into the queue
