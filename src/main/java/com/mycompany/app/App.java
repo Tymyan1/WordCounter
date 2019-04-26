@@ -20,7 +20,7 @@ public class App
 {
 	// future args
 	private static final String URI = "mongodb://localhost:27017";
-	private static final String FILE = "D:/kody_k_hram.txt";
+	private static final String FILE = "test.txt";
 	
 	
     public static void main( String[] args )
@@ -88,7 +88,6 @@ public class App
     public static void processFile(String checksum, DBConnection db) {
     	while(true) {
     		try {
-    			System.out.println("Getting next ChunkFile");
     			ChunkFile fileToProcess = db.getNextChunkFile(checksum);
     	    	fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
     	    	

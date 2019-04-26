@@ -55,6 +55,7 @@ public class DBConnection {
 	private MongoCollection<Document> colResults;
 	private MongoCollection<Document> colFinalResults;
 	private MongoCollection<Document> colMetaFiles;
+	private MongoCollection<Document> colFileRegister;
 	
 	public DBConnection(String uri) {
 		this.URI = uri;
@@ -69,16 +70,18 @@ public class DBConnection {
 			this.colResults = this.db.getCollection("results");
 			this.colFinalResults = this.db.getCollection("final_results");
 			this.colMetaFiles = this.db.getCollection("metafiles");
-			
+			this.colFileRegister = this.db.getCollection("file_register");
 		} catch (Exception e) { //TODO better exceptions 
 			e.printStackTrace();
 		}
 	}
 	
-	public boolean fileUploaded(String checksum) {
-		//TODO maybe a bit more throughout checking? e.g. failed mid upload?
-		Document doc = this.colMetaFiles.find(new Document("checksum", checksum)).first();
-		return doc != null;
+	public FileUploadStage fileUploaded(String checksum) {
+		Document doc = this.colFileRegister.find(new Document("checksum", checksum)).first();
+		if(doc == null) return FileUploadStage.NO_UPLOAD;
+		int uploads = doc.getInteger("fullyUploaded");
+		if(uploads > 0) return FileUploadStage.FULL_UPLOAD;
+		else return FileUploadStage.PARTIAL_UPLOAD;
 	}
 	
 	public String uploadFile(File file) throws IOException {
@@ -86,15 +89,26 @@ public class DBConnection {
 		System.out.println("Calculating the checksum");
 		String checksum = Util.getChecksum(file.getAbsolutePath());
   
-		if(fileUploaded(checksum)) {
+		switch(fileUploaded(checksum)) {
+		case FULL_UPLOAD:
 			System.out.println("File already seems to be uploaded!");
 			return checksum;
-		}
+		case PARTIAL_UPLOAD:
+			//TODO check numOfLines per chunkFile and maybe not discard the files?
+			System.out.println("Found partial upload, clearing up...");
+			clearChunkFiles(checksum);
+			break;
+		case NO_UPLOAD:
+			break;
+		};
 		
 		System.out.println("Uploading file");
 		
-		final int linesPerFile = 2;
-		final int bufferSize = 8 * 1024;		
+		// register the file
+		this.colFileRegister.insertOne(new Document("checksum", checksum).append("fullyUploaded", 0));
+		
+		final int linesPerFile = 2; //TODO move into config or similar
+		final int bufferSize = 8 * 1024;
 		
 		// start reading the file
 		int i = 0;
@@ -125,6 +139,8 @@ public class DBConnection {
     	    	}
     	        line = bufferedReader.readLine();
     	    }
+    	    // increase the fullyUploaded counter
+    	    this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$inc", new Document("fullyUploaded", 1)));
     	    return checksum;
     	} catch (FileNotFoundException e) {
 			throw e;
@@ -132,6 +148,22 @@ public class DBConnection {
 			throw e;
 		}
 	}
+	
+	public void clearChunkFiles(String checksum) {
+		// delete meta files
+		this.colMetaFiles.deleteMany(new Document("checksum", checksum));
+		
+		// delete the actual files
+		this.fileBucket.find(new Document("checksum", checksum)).forEach(new Block<GridFSFile>(){
+			@Override
+			public void apply(GridFSFile file) {
+				fileBucket.delete(file.getId());
+			}
+		});
+		
+		// delete from the register as well (will be reentered on upload)
+		this.colFileRegister.deleteOne(new Document("checksum", checksum));
+	}	
 	
 	public ChunkFile getNextChunkFile(String checksum) {
 		
@@ -146,7 +178,7 @@ public class DBConnection {
 				throw new VydraNoChunkFilesFoundException("No not-yet-downloaded and processed chunk files remaining");		
 			}
 		}
-		ObjectId fileId = (ObjectId)fileMeta.get("id");
+		ObjectId fileId = fileMeta.getObjectId("id");
 		
 		// update the info
 		this.colMetaFiles.updateOne(fileMeta, new Document("$inc", new Document("downloaded", 1)));
@@ -203,7 +235,7 @@ public class DBConnection {
         chunkFileMetas.forEach(new Block<Document>(){
 			@Override
 			public void apply(Document doc) {
-				ids.add((ObjectId)doc.get("id"));
+				ids.add(doc.getObjectId("id"));
 			}
         });
         
