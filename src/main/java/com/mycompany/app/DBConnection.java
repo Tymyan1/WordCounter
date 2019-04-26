@@ -105,7 +105,7 @@ public class DBConnection {
 		System.out.println("Uploading file");
 		
 		// register the file
-		this.colFileRegister.insertOne(new Document("checksum", checksum).append("fullyUploaded", 0));
+		this.colFileRegister.insertOne(new Document("checksum", checksum).append("fullyUploaded", 0).append("finalised", 0));
 		
 		final int linesPerFile = 2; //TODO move into config or similar
 		final int bufferSize = 8 * 1024;
@@ -262,7 +262,10 @@ public class DBConnection {
         	finalResults.append(key, finalReduceMap.get(key));
         }
         // TODO check for duplicity?
+        // upload results
         this.colFinalResults.insertOne(finalResults);
+        // acknowledge in file register
+        this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$inc", new Document("finalised", 1)));
         
         return finalResults;
 	}
@@ -277,19 +280,11 @@ public class DBConnection {
 		return doc;
 	}
 	
-	public ChunkFileMeta getNextTargetFile() {
+	public String getNextTargetFile() {
 		// get the next chunk file not being processed
-		Document meta = this.colMetaFiles.find(new Document("downloaded", 0)).first();
-		if(meta == null) {
-			// get the next chunk file not yet processed
-			meta = this.colMetaFiles.find(new Document("processed", 0)).first();
-			if(meta == null) {
-				// there's nothing more to process!
-				return null;
-			}
-		}
-		ChunkFileMeta metaFile = new ChunkFileMeta(meta);
-		return metaFile;
+		Document fileRegister = this.colFileRegister.find(new Document("finalised", 0).append("fullyUploaded", new Document("$gt", 0))).first();
+		if(fileRegister == null) return null;
+		return fileRegister.getString("checksum");
 	}
 	
 	private void uploadChunkFile(String lines, int numOfLines, String checksum, int it) {

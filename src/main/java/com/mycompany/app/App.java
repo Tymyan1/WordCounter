@@ -20,7 +20,7 @@ public class App
 {
 	// future args
 	private static final String URI = "mongodb://localhost:27017";
-	private static final String FILE = "test.txt";
+	private static final String FILE = "";//"test.txt";
 	
 	
     public static void main( String[] args )
@@ -57,12 +57,12 @@ public class App
 	    		// run this as just a worker node until...forever
 	    		//TODO make get this to stop on some user interrupt
 	    		while(true) {
-		    		ChunkFileMeta meta = db.getNextTargetFile();
-		    		while(meta == null) {
+		    		String checksum = db.getNextTargetFile();
+		    		while(checksum == null) {
 		    			Thread.sleep(5000); //TODO move to config
-		    			meta = db.getNextTargetFile();
+		    			checksum = db.getNextTargetFile();
 		    		}
-		    		processFile(meta.getChecksum(), db);
+		    		processFile(checksum, db);
 	    		}
 	    	}
     	} catch (FileNotFoundException e) {
