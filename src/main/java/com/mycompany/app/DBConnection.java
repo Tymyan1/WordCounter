@@ -51,11 +51,10 @@ public class DBConnection {
 	private final String URI;
 	private MongoClient client;
 	private MongoDatabase db;
-	
-	private static final String BUCKET_NAME = "wordfiles";
-	private static final String RESULTS_COLLECTION = "results";
-	private static final String META_FILES = "metafiles";
-	private static final String FINAL_RESULTS = "final_results";
+	private GridFSBucket fileBucket;
+	private MongoCollection<Document> colResults;
+	private MongoCollection<Document> colFinalResults;
+	private MongoCollection<Document> colMetaFiles;
 	
 	public DBConnection(String uri) {
 		this.URI = uri;
@@ -65,7 +64,12 @@ public class DBConnection {
 	public void connect() {
 		try {
 			this.client = new MongoClient(new MongoClientURI(this.URI));
-			this.db= this.client.getDatabase("db");
+			this.db = this.client.getDatabase("db");
+			this.fileBucket = GridFSBuckets.create(this.db, "wordfiles");
+			this.colResults = this.db.getCollection("results");
+			this.colFinalResults = this.db.getCollection("final_results");
+			this.colMetaFiles = this.db.getCollection("metafiles");
+			
 		} catch (Exception e) { //TODO better exceptions 
 			e.printStackTrace();
 		}
@@ -73,7 +77,7 @@ public class DBConnection {
 	
 	public boolean fileUploaded(String checksum) {
 		//TODO maybe a bit more throughout checking? e.g. failed mid upload?
-		Document doc = this.db.getCollection(META_FILES).find(new Document("checksum", checksum)).first();
+		Document doc = this.colMetaFiles.find(new Document("checksum", checksum)).first();
 		return doc != null;
 	}
 	
@@ -131,13 +135,11 @@ public class DBConnection {
 	
 	public ChunkFile getNextChunkFile(String checksum) {
 		
-		MongoCollection<Document> metaCol = this.db.getCollection(META_FILES);
-		
 		// find unused file
-		Document fileMeta = metaCol.find(new Document("downloaded", 0)).first();
+		Document fileMeta = this.colMetaFiles.find(new Document("downloaded", 0)).first();
 		if(fileMeta == null) {
 			// find a file already being processed
-			fileMeta = metaCol.find(new Document("processed", 0)).first();
+			fileMeta = this.colMetaFiles.find(new Document("processed", 0)).first();
 			if(fileMeta == null) {
 				// there's nothing more to do
 				//TODO actually maybe stats?
@@ -148,16 +150,15 @@ public class DBConnection {
 		System.out.println(fileId);
 		
 		// update the info
-		metaCol.updateOne(fileMeta, new Document("$inc", new Document("downloaded", 1)));
+		this.colMetaFiles.updateOne(fileMeta, new Document("$inc", new Document("downloaded", 1)));
 		
-		GridFSBucket gridFSBucket = GridFSBuckets.create(this.db, BUCKET_NAME);		
 		// get the chunk file
-		GridFSFindIterable found = gridFSBucket.find(new Document("_id", fileId));
+		GridFSFindIterable found = this.fileBucket.find(new Document("_id", fileId));
 		GridFSFile file = found.first();
 		ObjectId id = file.getObjectId();
 		
 		// download it
-		try (GridFSDownloadStream  downloadStream = gridFSBucket.openDownloadStream(id)) {
+		try (GridFSDownloadStream  downloadStream = this.fileBucket.openDownloadStream(id)) {
 			//TODO read in batches (but don't split words)
 			int fileLength = (int) downloadStream.getGridFSFile().getLength();
 			byte[] bytesToWriteTo = new byte[fileLength];
@@ -170,10 +171,8 @@ public class DBConnection {
 	}
 	
 	public void writeReducedResultsToDB(ChunkFileMeta file) {
-		MongoCollection<Document> col = this.db.getCollection(RESULTS_COLLECTION);
-		
 		// check whether the results already exist (some1 already done the job?)
-		Document existingResult = col.find(new Document("fileId", file.getId())).first();
+		Document existingResult = this.colResults.find(new Document("fileId", file.getId())).first();
 		if(existingResult == null) {
 			// no results yet, lets save them
 			// build the doc
@@ -182,13 +181,13 @@ public class DBConnection {
 				results.append(key, ProcessThread.reduceMap.get(key));
 			}
 			// save it
-			col.insertOne(results);
+			this.colResults.insertOne(results);
 		} else {
 			//TODO what to do if results already computed? save a duplicate in case they differ and let the 'merge-results' method decide?
 			System.out.println("Results document already exists ( id: " + existingResult.get("_id") + ")");
 		}
 		// updates the processed meta
-		this.db.getCollection(META_FILES).findOneAndUpdate(file.toIdDocument(), new Document("$inc", new Document("processed", 1)));
+		this.colMetaFiles.findOneAndUpdate(file.toIdDocument(), new Document("$inc", new Document("processed", 1)));
 		
 		// clear the map
 		//TODO change this once adding support for multiple chunk files
@@ -197,7 +196,7 @@ public class DBConnection {
 
 	public void finalReduce(String checksum) {
 		// get all the chunkfile meta documents
-		FindIterable<Document> chunkFileMetas = this.db.getCollection(META_FILES).find(new Document("checksum", checksum));
+		FindIterable<Document> chunkFileMetas = this.colMetaFiles.find(new Document("checksum", checksum));
    
         //TODO maybe get the ids directly from gridfs?
         // get all the chunkfile ids
@@ -210,7 +209,7 @@ public class DBConnection {
         });
         
         // download all the relevant results
-        FindIterable<Document> resultsIt = this.db.getCollection(RESULTS_COLLECTION).find(new Document("fileId", new Document("$in", ids)));
+        FindIterable<Document> resultsIt = this.colResults.find(new Document("fileId", new Document("$in", ids)));
         // into list
         List<Document> results = new ArrayList<>();
         resultsIt.into(results);
@@ -232,27 +231,26 @@ public class DBConnection {
         	finalResults.append(key, finalReduceMap.get(key));
         }
         // TODO check for duplicity?
-        this.db.getCollection(FINAL_RESULTS).insertOne(finalResults);
+        this.colFinalResults.insertOne(finalResults);
 	}
 	
 	private void uploadChunkFile(String lines, int numOfLines, String checksum, int it) {
 		try {
-			GridFSBucket gridFSBucket = GridFSBuckets.create(this.db, BUCKET_NAME);
 			InputStream stream = new ByteArrayInputStream(lines.getBytes("UTF-8") );
 		    // Create some custom options
 		    GridFSUploadOptions options = new GridFSUploadOptions()
 		                                        .metadata(new Document("checksum", checksum)
 		                                        			.append("numOfLines", numOfLines));
 
-		    ObjectId fileId = gridFSBucket.uploadFromStream(checksum + "_" + it, stream, options);
+		    ObjectId fileId = this.fileBucket.uploadFromStream(checksum + "_" + it, stream, options);
 		    
 		    // saves the metas
-		    this.db.getCollection(META_FILES).insertOne(new Document("id", fileId)
-		    												.append("numOfLines", numOfLines)
-		    												.append("checksum", checksum)
-//		    												.append("origFileName", fileName)
-															.append("downloaded", 0)
-															.append("processed", 0));
+		    this.colMetaFiles.insertOne(new Document("id", fileId)
+    												.append("numOfLines", numOfLines)
+    												.append("checksum", checksum)
+//    												.append("origFileName", fileName)
+													.append("downloaded", 0)
+													.append("processed", 0));
 		} catch (UnsupportedEncodingException e) {
 			// this should not be ever thrown
 			e.printStackTrace();
