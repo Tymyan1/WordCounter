@@ -9,7 +9,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.TreeMap;
 
 import com.mongodb.MongoClient;
@@ -63,6 +65,7 @@ public class App
 		    			Thread.sleep(5000); //TODO move to config
 		    			checksum = db.getNextTargetFile();
 		    		}
+		    		System.out.println("Processing file " + checksum);
 		    		processFile(checksum, db);
 	    		}
 	    	}
@@ -91,36 +94,61 @@ public class App
     }
     
     public static void processFile(String checksum, DBConnection db) {
-    	while(true) {
-    		try {
-    			ChunkFile fileToProcess = db.getNextChunkFile(checksum);
-    	    	fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
+		try {
+			// get and process all the chunk files
+			ChunkFile fileToProcess;
+			while((fileToProcess = db.getNextChunkFile(checksum)) != null) {
+				fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
     	    	
     	    	ProcessThread.linesCounter.put(fileToProcess.getFileMeta(), 0);
     	    	
-//    	    	System.out.println(fileToProcess.getFileMeta());
     	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
     	    		Thread.sleep(500);
     	    	}
     	    	
     	    	System.out.println("Writing results to db");
     	    	db.writeReducedResultsToDB(fileToProcess.getFileMeta());
-//    	    	System.out.println("Processed ChunkFile");
-    	    	
-    		} catch (VydraNoChunkFilesFoundException e) {
-    			Document results = db.getFinalResults(checksum);
-    			if(results == null) {
-    				System.out.println("Processing done, final reducing the results");
-    				results = db.finalReduce(checksum);
-    			}
-//    			displayResults(results);
-    			break;
-    		} catch (InterruptedException e) {
-    			// won't be thrown
-				System.out.println("Interrupted");
-				e.printStackTrace();
 			}
-    	}
+			// finalise the results
+	    	Document results = db.getFinalResults(checksum);
+			if(results == null) {
+				System.out.println("Processing done, final reducing the results");
+				results = db.finalReduce(checksum);
+			} else {
+				db.setFileFinalised(checksum, 1);
+			}
+			displayResults(results);
+			
+		} catch (InterruptedException e) {
+			// won't be thrown
+			System.out.println("Interrupted");
+			e.printStackTrace();
+		}
+    }
+    
+    
+    public static void displayResults(Document results) {
+    	Map<String, Object> map = new TreeMap<>();
+    	map.putAll((Map<String, Object>)results);
+    	
+    	// remove metafields
+    	map.remove("_id");
+    	map.remove("_fileChecksum");
+    	
+    	// put results into a list (for easier results access)
+    	List<Map.Entry<String, Object>> list = new ArrayList<>();
+		list.addAll(map.entrySet());
+		
+		
+		System.out.println((list.size() > 10) ? list.size()-1 : 10);
+		List<Map.Entry<String, Object>> topCommon = list.subList(0, (list.size() < 10) ? list.size() : 10);
+		List<Map.Entry<String, Object>> leastCommon = list.subList((list.size() < 10) ? 0 : list.size()-10, list.size());
+		
+		System.out.println("Top 10 common words: ");
+		System.out.println(topCommon);
+		
+		System.out.println("Top 10 least common words: ");
+		System.out.println(leastCommon);
     }
     
 	public static boolean checkIfProcessingFinished(ChunkFileMeta meta) {

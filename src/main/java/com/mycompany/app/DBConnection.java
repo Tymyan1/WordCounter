@@ -167,7 +167,7 @@ public class DBConnection {
 			if(fileMeta == null) {
 				// there's nothing more to do
 				//TODO actually maybe stats?
-				throw new VydraNoChunkFilesFoundException("No not-yet-downloaded and processed chunk files remaining");		
+				return null;
 			}
 		}
 		ObjectId fileId = fileMeta.getObjectId("id");
@@ -253,7 +253,7 @@ public class DBConnection {
         for(String key : finalReduceMap.keySet()) {
         	finalResults.append(key, finalReduceMap.get(key));
         }
-        // TODO check for duplicity?
+        // TODO check for duplicity!
         // upload results
         this.colFinalResults.insertOne(finalResults);
         // acknowledge in file register
@@ -277,6 +277,16 @@ public class DBConnection {
 		Document fileRegister = this.colFileRegister.find(new Document("finalised", 0).append("fullyUploaded", new Document("$gt", 0))).first();
 		if(fileRegister == null) return null;
 		return fileRegister.getString("checksum");
+	}
+	
+	/**
+	 * This method is used to correct the 'finalised' value in FileRegister when the final_results record exists.
+	 * The program itself should never end up in that state, but manually editing the value could lead to unexpected behaviour. 
+	 * @param checksum 
+	 * @param val
+	 */
+	public void setFileFinalised(String checksum, int val) {
+		this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$set", new Document("finalised", val)));
 	}
 	
 	private void uploadChunkFile(String lines, int numOfLines, String checksum, int it) {
