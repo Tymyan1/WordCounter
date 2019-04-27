@@ -48,7 +48,7 @@ import org.bson.types.ObjectId;
 
 public class DBConnection {
 
-	private final String URI;
+	public final String URI;
 	private MongoClient client;
 	private MongoDatabase db;
 	private GridFSBucket fileBucket;
@@ -59,21 +59,13 @@ public class DBConnection {
 	
 	public DBConnection(String uri) {
 		this.URI = uri;
-	}
-
-	//TODO kill connection on destroy?
-	public void connect() {
-		try {
-			this.client = new MongoClient(new MongoClientURI(this.URI));
-			this.db = this.client.getDatabase("db");
-			this.fileBucket = GridFSBuckets.create(this.db, "wordfiles");
-			this.colResults = this.db.getCollection("results");
-			this.colFinalResults = this.db.getCollection("final_results");
-			this.colMetaFiles = this.db.getCollection("metafiles");
-			this.colFileRegister = this.db.getCollection("file_register");
-		} catch (Exception e) { //TODO better exceptions 
-			e.printStackTrace();
-		}
+		this.client = new MongoClient(new MongoClientURI(this.URI));
+		this.db = this.client.getDatabase("db");
+		this.fileBucket = GridFSBuckets.create(this.db, "wordfiles");
+		this.colResults = this.db.getCollection("results");
+		this.colFinalResults = this.db.getCollection("final_results");
+		this.colMetaFiles = this.db.getCollection("metafiles");
+		this.colFileRegister = this.db.getCollection("file_register");
 	}
 	
 	public FileUploadStage fileUploaded(String checksum) {
@@ -251,7 +243,7 @@ public class DBConnection {
         for(Document doc : results) {
         	for(String word : doc.keySet()) {
         		if(!("_id".equals(word) || "fileId".equals(word))) {
-        			finalReduceMap.merge(word, 1, (oldValue, one) -> oldValue + one);
+        			finalReduceMap.merge(word, doc.getInteger(word), (oldValue, newValue) -> oldValue + newValue);
         		}
         	}
         }

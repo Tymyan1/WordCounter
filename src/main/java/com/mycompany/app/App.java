@@ -7,9 +7,13 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 import com.mongodb.MongoClient;
+import com.mongodb.MongoTimeoutException;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.Block;
@@ -20,7 +24,7 @@ public class App
 {
 	// future args
 	private static final String URI = "mongodb://localhost:27017";
-	private static final String FILE = "";//"test.txt";
+	private static final String FILE = "kody_k_hram.txt";
 	
 	
     public static void main( String[] args )
@@ -36,9 +40,6 @@ public class App
 	    	for(Thread t : processThreads) {
 	    		t.start();
 	    	}
-	    	
-	    	System.out.println("Connecting to db");
-	    	db.connect();
 	    	
 	    	// upload file and see results
 	    	if(FILE != null && !"".equals(FILE.trim())) {
@@ -67,11 +68,15 @@ public class App
 	    	}
     	} catch (FileNotFoundException e) {
     		System.out.println("File not found, please check the path given");
-    		e.printStackTrace();
+//    		e.printStackTrace();
+    	} catch (MongoTimeoutException e) {
+    		//TODO this is being thrown from daemon and prints stack trace elsewhere, ideally disable that somehow
+    		System.out.println("Connection to the database failed, please restart");
     	} catch (IOException e) {
-    		e.printStackTrace();
+//    		e.printStackTrace();
+    		System.out.println("An unexpected error with processing the file occured");
     	} catch (InterruptedException e) {
-			//TODO sort this out
+			// this should never be thrown
 			e.printStackTrace();
 		}
     }
@@ -95,7 +100,7 @@ public class App
     	    	
 //    	    	System.out.println(fileToProcess.getFileMeta());
     	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
-    	    		Thread.sleep(1000);
+    	    		Thread.sleep(500);
     	    	}
     	    	
     	    	System.out.println("Writing results to db");
@@ -108,7 +113,7 @@ public class App
     				System.out.println("Processing done, final reducing the results");
     				results = db.finalReduce(checksum);
     			}
-    			//TODO view results
+//    			displayResults(results);
     			break;
     		} catch (InterruptedException e) {
     			// won't be thrown
