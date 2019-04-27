@@ -131,6 +131,10 @@ public class DBConnection {
     	    	}
     	        line = bufferedReader.readLine();
     	    }
+    	    // ensure everything is uploaded
+    		if(lines.length() > 0) {
+    			uploadChunkFile(lines.toString(), numOfLines, checksum, j++);
+    		}
     	    // increase the fullyUploaded counter
     	    this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$inc", new Document("fullyUploaded", 1)));
     	    return checksum;
