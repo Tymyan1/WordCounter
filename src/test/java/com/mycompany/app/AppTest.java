@@ -9,6 +9,8 @@ import org.junit.Test;
  */
 public class AppTest 
 {
+	public static final String DB_URI = "mongodb://localhost:27017";
+	
     /**
      * Rigorous Test :-)
      */
@@ -17,4 +19,5 @@ public class AppTest
     {
         assertTrue( true );
     }
+    
 }

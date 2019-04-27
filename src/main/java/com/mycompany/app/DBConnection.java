@@ -38,6 +38,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.xml.bind.DatatypeConverter;
 
@@ -99,7 +100,7 @@ public class DBConnection {
 		// register the file
 		this.colFileRegister.insertOne(new Document("checksum", checksum).append("fullyUploaded", 0).append("finalised", 0));
 		
-		final int linesPerFile = 2; //TODO move into config or similar
+		final int linesPerFile = 2000; //TODO move into config or similar
 		final int bufferSize = 8 * 1024;
 		
 		// start reading the file
@@ -193,6 +194,9 @@ public class DBConnection {
 			
 			ChunkFile chunkFile = new ChunkFile(id, new String(bytesToWriteTo, StandardCharsets.UTF_8));
 			chunkFile.getFileMeta().setChecksum(checksum);
+			
+			// register the file with the map
+			ProcessThread.reduceMap.put(id, new ConcurrentHashMap<String, Integer>());
 			return chunkFile;
 		}
 	}
@@ -204,8 +208,8 @@ public class DBConnection {
 			// no results yet, lets save them
 			// build the doc
 			Document results = new Document("fileId", file.getId());
-			for(String key : ProcessThread.reduceMap.keySet()) {
-				results.append(key, ProcessThread.reduceMap.get(key));
+			for(String key : ProcessThread.reduceMap.get(file.getId()).keySet()) {
+				results.append(key, ProcessThread.reduceMap.get(file.getId()).get(key));
 			}
 			// save it
 			this.colResults.insertOne(results);
@@ -217,11 +221,10 @@ public class DBConnection {
 		this.colMetaFiles.findOneAndUpdate(file.toIdDocument(), new Document("$inc", new Document("processed", 1)));
 		
 		// clear the map
-		//TODO change this once adding support for multiple chunk files
-		ProcessThread.reduceMap.clear();
+		ProcessThread.reduceMap.get(file.getId()).clear();
 	}
 
-	public Document finalReduce(String checksum) {
+	public List<Document> getAllResults(String checksum) {
 		// get all the chunkfile meta documents
 		FindIterable<Document> chunkFileMetas = this.colMetaFiles.find(new Document("checksum", checksum));
    
@@ -241,29 +244,15 @@ public class DBConnection {
         List<Document> results = new ArrayList<>();
         resultsIt.into(results);
         
-        //TODO test whether it's faster or not as compared to just using a Document and/or find a better conversion
-        // final reduce into map
-        Map<String, Integer> finalReduceMap = new HashMap<>();
-        for(Document doc : results) {
-        	for(String word : doc.keySet()) {
-        		if(!("_id".equals(word) || "fileId".equals(word))) {
-        			finalReduceMap.merge(word, doc.getInteger(word), (oldValue, newValue) -> oldValue + newValue);
-        		}
-        	}
-        }
-        
-        // into document
-        Document finalResults = new Document("_fileChecksum", checksum);
-        for(String key : finalReduceMap.keySet()) {
-        	finalResults.append(key, finalReduceMap.get(key));
-        }
-        // TODO check for duplicity!
-        // upload results
-        this.colFinalResults.insertOne(finalResults);
-        // acknowledge in file register
-        this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$inc", new Document("finalised", 1)));
-        
-        return finalResults;
+        return results;
+	}
+	
+	public void uploadFinalResult(Document finalResults, String checksum) {
+		// upload results
+      this.colFinalResults.insertOne(finalResults);
+      // acknowledge in file register
+      this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$inc", new Document("finalised", 1)));
+      
 	}
 	
 	/**

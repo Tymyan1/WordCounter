@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
@@ -26,8 +27,8 @@ public class App
 {
 	// future args
 	private static final String URI = "mongodb://localhost:27017";
-	private static final String FILE = "kody_k_hram.txt";
-	
+//	private static final String FILE = "D:\\enwiki-latest-pages-articles-m0ultistream.xml";
+	private static final String FILE = "test.txt";
 	
     public static void main( String[] args )
     {
@@ -100,7 +101,7 @@ public class App
 			while((fileToProcess = db.getNextChunkFile(checksum)) != null) {
 				fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
     	    	
-    	    	ProcessThread.linesCounter.put(fileToProcess.getFileMeta(), 0);
+    	    	ProcessThread.linesCounter.put(fileToProcess.getFileMeta().getId(), 0);
     	    	
     	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
     	    		Thread.sleep(500);
@@ -113,12 +114,18 @@ public class App
 	    	Document results = db.getFinalResults(checksum);
 			if(results == null) {
 				System.out.println("Processing done, final reducing the results");
-				results = db.finalReduce(checksum);
+				// download partial results
+				List<Document> partialResults = db.getAllResults(checksum);
+				// reduce
+				results = reduceResults(partialResults);
+				results.append("_fileChecksum", checksum);
+				// upload the final results
+				db.uploadFinalResult(results, checksum);
 			} else {
+				// this should not naturally occur, but fixes unwanted behaviour should 'finalised' be edited manually
 				db.setFileFinalised(checksum, 1);
 			}
 			displayResults(results);
-			
 		} catch (InterruptedException e) {
 			// won't be thrown
 			System.out.println("Interrupted");
@@ -152,6 +159,29 @@ public class App
     }
     
 	public static boolean checkIfProcessingFinished(ChunkFileMeta meta) {
-    	return meta.getNumOfLines() <= ProcessThread.linesCounter.get(meta);
+    	return meta.getNumOfLines() <= ProcessThread.linesCounter.get(meta.getId());
     }
+	
+	private static Document reduceResults(List<Document> results) {
+        
+        //TODO test whether it's faster or not as compared to just using a Document and/or find a better conversion
+        // final reduce into map
+        Map<String, Integer> finalReduceMap = new HashMap<>();
+        for(Document doc : results) {
+        	for(String word : doc.keySet()) {
+        		if(!("_id".equals(word) || "fileId".equals(word))) {
+        			finalReduceMap.merge(word, doc.getInteger(word), (oldValue, newValue) -> oldValue + newValue);
+        		}
+        	}
+        }
+        
+        // into document
+        Document finalResults = new Document();
+        for(String key : finalReduceMap.keySet()) {
+        	finalResults.append(key, finalReduceMap.get(key));
+        }
+        // TODO check for duplicity!
+        return finalResults;
+
+	}
 }
