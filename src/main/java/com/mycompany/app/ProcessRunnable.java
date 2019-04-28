@@ -8,7 +8,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 import org.bson.types.ObjectId;
 
-public class ProcessThread implements Runnable {
+public class ProcessRunnable implements Runnable {
 
 	public static final int NUM_OF_PROCESS_THREADS = 2;
 	
