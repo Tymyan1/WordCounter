@@ -8,12 +8,29 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 import org.bson.types.ObjectId;
 
+/**
+ * A Runnable processing parts of the chunk files.
+ * 
+ * @author Vydra
+ *
+ */
 public class ProcessRunnable implements Runnable {
 
 	public static final int NUM_OF_PROCESS_THREADS = 2;
 	
+	/**
+	 * Stores parts of the file yet to be processed by the ProcessRunnable.
+	 */
 	public static final BlockingQueue<Pair<ChunkFileMeta, String>> linesToProcess = new LinkedBlockingQueue<>();
+	
+	/**
+	 * Stores results of the given chunk file.
+	 */
 	public static final Map<ObjectId, Map<String, Integer>> reduceMap = new ConcurrentHashMap<>();
+	
+	/**
+	 * Counter used to determine whether processing of a given chunk file has been completed.
+	 */
 	public static final Map<ObjectId, Integer> linesCounter = new ConcurrentHashMap<>();
 
 	@Override

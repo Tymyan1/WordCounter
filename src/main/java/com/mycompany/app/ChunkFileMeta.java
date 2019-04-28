@@ -3,10 +3,12 @@ package com.mycompany.app;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 
+/***
+ * Light-weight version of ChunkFile with only the metadata included (no content)
+ * 
+ * @author Vydra
+ */
 public class ChunkFileMeta {
-	/***
-	 * Light-weight version of ChunkFile with only the metadata included (no content)
-	 */
 
 	private ObjectId id;
 	private int numOfLines;

@@ -13,7 +13,19 @@ import java.util.zip.Checksum;
 
 import javax.xml.bind.DatatypeConverter;
 
-public class Util {
+/**
+ * Class providing static utility methods 
+ * 
+ * @author Vydra
+ *
+ */
+public abstract class Util {
+	
+	/**
+	 * Computes a checksum for a given file.
+	 * @param filename Name of the file (path)
+	 * @return Checksum
+	 */
 	public static String getChecksum(String filename) {
 		
 		try(InputStream is = new FileInputStream(filename)) {

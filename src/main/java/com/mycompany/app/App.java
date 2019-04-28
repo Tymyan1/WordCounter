@@ -35,8 +35,8 @@ public class App
     	try {
 	    	DBConnection db = new DBConnection(URI);
 	    	List<Thread> processThreads = new ArrayList<>();
-	    	for(int i = 0; i < ProcessThread.NUM_OF_PROCESS_THREADS; i++) {
-	    		processThreads.add(new Thread(new ProcessThread()));
+	    	for(int i = 0; i < ProcessRunnable.NUM_OF_PROCESS_THREADS; i++) {
+	    		processThreads.add(new Thread(new ProcessRunnable()));
 	    	}
 	    	
 	    	System.out.println("Running process threads");
@@ -89,11 +89,16 @@ public class App
     public static int splitLines(ChunkFile file) {
     	String[] lines = file.getContent().split(System.lineSeparator());
     	for(String line : lines) {
-    		ProcessThread.linesToProcess.add(new Pair<ChunkFileMeta, String>(file.getFileMeta(), line));
+    		ProcessRunnable.linesToProcess.add(new Pair<ChunkFileMeta, String>(file.getFileMeta(), line));
     	}
     	return lines.length;
     }
     
+    /**
+     * Fully processes a file identified by a checksum stored in a given database.  
+     * @param checksum
+     * @param db
+     */
     public static void processFile(String checksum, DBConnection db) {
 		try {
 			// get and process all the chunk files
@@ -101,7 +106,7 @@ public class App
 			while((fileToProcess = db.getNextChunkFile(checksum)) != null) {
 				fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
     	    	
-    	    	ProcessThread.linesCounter.put(fileToProcess.getFileMeta().getId(), 0);
+    	    	ProcessRunnable.linesCounter.put(fileToProcess.getFileMeta().getId(), 0);
     	    	
     	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
     	    		Thread.sleep(500);
@@ -133,7 +138,10 @@ public class App
 		}
     }
     
-    
+    /**
+     * Method to display the results.
+     * @param results
+     */
     public static void displayResults(Document results) {
     	Map<String, Object> map = new TreeMap<>();
     	map.putAll((Map<String, Object>)results);
@@ -158,10 +166,20 @@ public class App
 		System.out.println(leastCommon);
     }
     
+    /**
+     * Checks whether the local processing of a given file has finished.
+     * @param meta ChunkFileMeta file identifying the file.
+     * @return true if processing finished, false otherwise
+     */
 	public static boolean checkIfProcessingFinished(ChunkFileMeta meta) {
-    	return meta.getNumOfLines() <= ProcessThread.linesCounter.get(meta.getId());
+    	return meta.getNumOfLines() <= ProcessRunnable.linesCounter.get(meta.getId());
     }
 	
+	/**
+	 * Reduces results into a single Document. All Documents in the list provided should be of String => Integer mapping.
+	 * @param results List of partial results
+	 * @return Document containing final results
+	 */
 	private static Document reduceResults(List<Document> results) {
         
         //TODO test whether it's faster or not as compared to just using a Document and/or find a better conversion

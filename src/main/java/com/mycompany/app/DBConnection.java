@@ -47,6 +47,12 @@ import org.bson.conversions.Bson;
 //import com.twmacinta.util.MD5;
 import org.bson.types.ObjectId;
 
+/**
+ * Class representing a MongoDB client. Contains methods for database access.
+ * 
+ * @author Vydra
+ *
+ */
 public class DBConnection {
 
 	public final String URI;
@@ -69,6 +75,11 @@ public class DBConnection {
 		this.colFileRegister = this.db.getCollection("file_register");
 	}
 	
+	/**
+	 * Checks the upload stage of a file given the checksum.
+	 * @param checksum
+	 * @return
+	 */
 	public FileUploadStage fileUploaded(String checksum) {
 		Document doc = this.colFileRegister.find(new Document("checksum", checksum)).first();
 		if(doc == null) return FileUploadStage.NO_UPLOAD;
@@ -77,6 +88,13 @@ public class DBConnection {
 		else return FileUploadStage.PARTIAL_UPLOAD;
 	}
 	
+	/**
+	 * Uploads a given file by calculating the checksum, clearing out any partial uploads, splitting the file into chunk files
+	 * and uploading them. Does not clear/upload anything if the file has already been uploaded (based on checksum).
+	 * @param file File to be uploaded
+	 * @return Checksum of the file
+	 * @throws IOException 
+	 */
 	public String uploadFile(File file) throws IOException {
 		
 		System.out.println("Calculating the checksum");
@@ -146,6 +164,10 @@ public class DBConnection {
 		}
 	}
 	
+	/**
+	 * Deletes all chunk files associated to a given checksum.
+	 * @param checksum
+	 */
 	public void clearChunkFiles(String checksum) {
 		// delete meta files
 		this.colMetaFiles.deleteMany(new Document("checksum", checksum));
@@ -162,6 +184,12 @@ public class DBConnection {
 		this.colFileRegister.deleteOne(new Document("checksum", checksum));
 	}	
 	
+	/**
+	 * Downloads the next chunk file to process associated to a given checksum. Prioritises chunk files not yet downloaded
+	 * by other processes over those already downloaded but not yet processed.
+	 * @param checksum of the file
+	 * @return ChunkFile 
+	 */
 	public ChunkFile getNextChunkFile(String checksum) {
 		
 		// find unused file
@@ -196,11 +224,16 @@ public class DBConnection {
 			chunkFile.getFileMeta().setChecksum(checksum);
 			
 			// register the file with the map
-			ProcessThread.reduceMap.put(id, new ConcurrentHashMap<String, Integer>());
+			ProcessRunnable.reduceMap.put(id, new ConcurrentHashMap<String, Integer>());
 			return chunkFile;
 		}
 	}
 	
+	/**
+	 * Given a chunk file meta, collects the partial results from ProcessRunnable.reduceMap and uploads them to the database
+	 * @param file
+	 */
+	//TODO refactor
 	public void writeReducedResultsToDB(ChunkFileMeta file) {
 		// check whether the results already exist (some1 already done the job?)
 		Document existingResult = this.colResults.find(new Document("fileId", file.getId())).first();
@@ -208,8 +241,8 @@ public class DBConnection {
 			// no results yet, lets save them
 			// build the doc
 			Document results = new Document("fileId", file.getId());
-			for(String key : ProcessThread.reduceMap.get(file.getId()).keySet()) {
-				results.append(key, ProcessThread.reduceMap.get(file.getId()).get(key));
+			for(String key : ProcessRunnable.reduceMap.get(file.getId()).keySet()) {
+				results.append(key, ProcessRunnable.reduceMap.get(file.getId()).get(key));
 			}
 			// save it
 			this.colResults.insertOne(results);
@@ -221,9 +254,14 @@ public class DBConnection {
 		this.colMetaFiles.findOneAndUpdate(file.toIdDocument(), new Document("$inc", new Document("processed", 1)));
 		
 		// clear the map
-		ProcessThread.reduceMap.get(file.getId()).clear();
+		ProcessRunnable.reduceMap.get(file.getId()).clear();
 	}
 
+	/**
+	 * Collects all partial results for a given checksum
+	 * @param checksum
+	 * @return results in List<Document>
+	 */
 	public List<Document> getAllResults(String checksum) {
 		// get all the chunkfile meta documents
 		FindIterable<Document> chunkFileMetas = this.colMetaFiles.find(new Document("checksum", checksum));
@@ -247,6 +285,11 @@ public class DBConnection {
         return results;
 	}
 	
+	/**
+	 * Uploads the final result for a given checksum
+	 * @param finalResults
+	 * @param checksum
+	 */
 	public void uploadFinalResult(Document finalResults, String checksum) {
 		// upload results
       this.colFinalResults.insertOne(finalResults);
@@ -256,7 +299,7 @@ public class DBConnection {
 	}
 	
 	/**
-	 * 
+	 * Collects final results from database for a given checksum
 	 * @param checksum
 	 * @return Final results Document or null if final results not present for given checksum
 	 */
@@ -265,6 +308,10 @@ public class DBConnection {
 		return doc;
 	}
 	
+	/**
+	 * Finds the next file to process
+	 * @return Checksum of the file
+	 */
 	public String getNextTargetFile() {
 		// get the next chunk file not being processed
 		Document fileRegister = this.colFileRegister.find(new Document("finalised", 0).append("fullyUploaded", new Document("$gt", 0))).first();
@@ -282,6 +329,13 @@ public class DBConnection {
 		this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$set", new Document("finalised", val)));
 	}
 	
+	/**
+	 * Uploads a single chunk file
+	 * @param lines Content of the chunk file
+	 * @param numOfLines Number of lines in the chunk file
+	 * @param checksum Checksum of the file
+	 * @param it iterator to append to the chunk file's name
+	 */
 	private void uploadChunkFile(String lines, int numOfLines, String checksum, int it) {
 		try {
 			InputStream stream = new ByteArrayInputStream(lines.getBytes("UTF-8") );

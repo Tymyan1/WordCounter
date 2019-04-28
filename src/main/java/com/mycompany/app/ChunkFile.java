@@ -2,6 +2,12 @@ package com.mycompany.app;
 
 import org.bson.types.ObjectId;
 
+/**
+ * Class representing a chunk file. 
+ * 
+ * @author Vydra
+ *
+ */
 public class ChunkFile {
 
 	private String content;

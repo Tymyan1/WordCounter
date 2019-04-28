@@ -1,5 +1,13 @@
 package com.mycompany.app;
 
+/**
+ * Represents a pair of two objects.
+ * 
+ * @author Vydra
+ *
+ * @param <G> First element
+ * @param <T> Second element
+ */
 public class Pair<G,T> {
 
 	private G first;
