@@ -274,7 +274,6 @@ public class App
         for(String key : finalReduceMap.keySet()) {
         	finalResults.append(key, finalReduceMap.get(key));
         }
-        // TODO check for duplicity!
         return finalResults;
 
 	}

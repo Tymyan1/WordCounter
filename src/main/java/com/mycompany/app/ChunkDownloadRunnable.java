@@ -6,8 +6,17 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.bson.types.ObjectId;
 
+/**
+ * Runnable responsible for downloading chunk files once the processing queue has under DOWNLOAD_THRESHOLD
+ * tokens to consume.
+ * @author Vydra
+ *
+ */
 public class ChunkDownloadRunnable implements Runnable {
 
+	/**
+	 * Number of tokens in the process queue to (attempt to) start downloading the next chunk file
+	 */
 	public static final int DOWNLOAD_THRESHOLD = 1000;
 	
 	public static final Set<ChunkFileMeta> processedChunks = new HashSet<>(); 

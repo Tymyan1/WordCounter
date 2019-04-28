@@ -9,6 +9,8 @@ import com.mongodb.client.gridfs.GridFSDownloadStream;
 import com.mongodb.client.gridfs.GridFSFindIterable;
 import com.mongodb.client.gridfs.model.GridFSFile;
 import com.mongodb.client.gridfs.model.GridFSUploadOptions;
+import com.mongodb.client.model.IndexOptions;
+import com.mongodb.client.model.Indexes;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
@@ -75,6 +77,13 @@ public class DBConnection {
 		this.colFinalResults = this.db.getCollection("results");
 		this.colMetaFiles = this.db.getCollection("metafiles");
 		this.colFileRegister = this.db.getCollection("file_register");
+		
+		// indexes
+		IndexOptions indexOptions = new IndexOptions().unique(true);
+		this.colFinalResults.createIndex(Indexes.ascending("checksum"), indexOptions);
+		this.colMetaFiles.createIndex(Indexes.ascending("id"), indexOptions);
+		this.colResults.createIndex(Indexes.ascending("_fileId"), indexOptions);
+		this.colFileRegister.createIndex(Indexes.ascending("checksum"), indexOptions);
 	}
 	
 	/**
@@ -107,7 +116,6 @@ public class DBConnection {
 			System.out.println("File already seems to be uploaded!");
 			return checksum;
 		case PARTIAL_UPLOAD:
-			//TODO check numOfLines per chunkFile and maybe not discard the files?
 			System.out.println("Found partial upload, clearing up...");
 			clearChunkFiles(checksum);
 			break;
@@ -212,7 +220,6 @@ public class DBConnection {
 			fileMeta = this.colMetaFiles.find(new Document("processed", 0).append("id", new Document("$nin", locallyProcessedChunks))).first();
 			if(fileMeta == null) {
 				// there's nothing more to do
-				//TODO actually maybe stats?
 				return null;
 			}
 		}
@@ -228,7 +235,6 @@ public class DBConnection {
 		
 		// download it
 		try (GridFSDownloadStream  downloadStream = this.fileBucket.openDownloadStream(id)) {
-			//TODO read in batches (but don't split words)
 			int fileLength = (int) downloadStream.getGridFSFile().getLength();
 			byte[] bytesToWriteTo = new byte[fileLength];
 			downloadStream.read(bytesToWriteTo);
@@ -268,7 +274,6 @@ public class DBConnection {
 		// get all the chunkfile meta documents
 		FindIterable<Document> chunkFileMetas = this.colMetaFiles.find(new Document("checksum", checksum));
    
-        //TODO maybe get the ids directly from gridfs?
         // get all the chunkfile ids
         List<ObjectId> ids = new ArrayList<>();
         chunkFileMetas.forEach(new Block<Document>(){
@@ -294,9 +299,10 @@ public class DBConnection {
 	 */
 	public void uploadFinalResult(Document finalResults, String checksum) {
 		// upload results
-      this.colFinalResults.insertOne(finalResults);
-      // acknowledge in file register
-      this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$inc", new Document("finalised", 1)));
+		
+		this.colFinalResults.insertOne(finalResults);
+		// acknowledge in file register
+		this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$inc", new Document("finalised", 1)));
       
 	}
 	

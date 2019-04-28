@@ -25,8 +25,9 @@ public abstract class Util {
 	 * Computes a checksum for a given file.
 	 * @param filename Name of the file (path)
 	 * @return Checksum
+	 * @throws IOException 
 	 */
-	public static String getChecksum(String filename) {
+	public static String getChecksum(String filename) throws IOException {
 		
 		try(InputStream is = new FileInputStream(filename)) {
 		    MessageDigest md = MessageDigest.getInstance("MD5");
@@ -44,8 +45,7 @@ public abstract class Util {
 			// Shouldn't ever be thrown
 			e.printStackTrace();
 		} catch (IOException e) {
-			//TODO handle this
-			e.printStackTrace();
+			throw e;
 		}
 		return null;
     }
