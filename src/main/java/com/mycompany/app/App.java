@@ -85,7 +85,11 @@ public class App
 		}
     }
     
-    // splits the file into lines and feeds them into the queue
+    /**
+     * Splits the given file content and feeds it into ProcessRunnable.linesToProcess
+     * @param file
+     * @return Number of lines in the given file
+     */
     public static int splitLines(ChunkFile file) {
     	String[] lines = file.getContent().split(System.lineSeparator());
     	for(String line : lines) {
