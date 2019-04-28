@@ -67,10 +67,10 @@ public class DBConnection {
 	public DBConnection(String uri) {
 		this.URI = uri;
 		this.client = new MongoClient(new MongoClientURI(this.URI));
-		this.db = this.client.getDatabase("db");
+		this.db = this.client.getDatabase("wordcount");
 		this.fileBucket = GridFSBuckets.create(this.db, "wordfiles");
-		this.colResults = this.db.getCollection("results");
-		this.colFinalResults = this.db.getCollection("final_results");
+		this.colResults = this.db.getCollection("partial_results");
+		this.colFinalResults = this.db.getCollection("results");
 		this.colMetaFiles = this.db.getCollection("metafiles");
 		this.colFileRegister = this.db.getCollection("file_register");
 	}
@@ -118,41 +118,48 @@ public class DBConnection {
 		// register the file
 		this.colFileRegister.insertOne(new Document("checksum", checksum).append("fullyUploaded", 0).append("finalised", 0));
 		
-		final int linesPerFile = 2000; //TODO move into config or similar
+		final int charFileSize = 1024*1024*16 / Character.SIZE; //TODO move into config or similar
 		final int bufferSize = 8 * 1024;
 		
 		// start reading the file
-		int i = 0;
+		int length = 0;
 		int j = 0; // chunk file iterator
+		int numOfLines = 0;
     	try(BufferedReader bufferedReader = new BufferedReader(new FileReader(file), bufferSize)) {
     		String line = bufferedReader.readLine();
-    		int numOfLines = 0;
-    		StringBuilder lines = new StringBuilder();
+    		StringBuilder sb = new StringBuilder();
     	    while(line != null) {
-    	    	// don't bother with empty lines
-    	    	line = line.trim();
-    	    	if("".equals(line)) {
-    	    		line = bufferedReader.readLine();
-    	    		continue;
-    	    	}
+//    	    	// don't bother with empty lines
+//    	    	line = line.trim();
+//    	    	if("".equals(line)) {
+//    	    		line = bufferedReader.readLine();
+//    	    		continue;
+//    	    	}
+    	    	numOfLines++;
     	    	
     	    	line = line.toLowerCase();
-    	    	lines.append(line);
-    	    	lines.append(System.lineSeparator()); // \n gets dropped
-    	    	numOfLines++;
-    	    	if(numOfLines >= linesPerFile) {
+    	    	sb.append(line);
+    	    	sb.append(System.lineSeparator());
+    	    	length += line.length();
+    	    	if(length >= charFileSize) {
+    	    		// find the last word
+    	    		String s = sb.toString();
+    	    		int index = s.lastIndexOf(' ');
+    	    		String content = s.substring(0, index);
+    	    		String remainder = s.substring(index); // starts with ' ' 
+    	    		
     	    		// upload file
-    	    		uploadChunkFile(lines.toString(), numOfLines, checksum, j++);
+    	    		uploadChunkFile(content, numOfLines, checksum, j++);
     	    		// reset counters
-    	    		i = 0; 
-    	    		lines = new StringBuilder();
-    	    		numOfLines = 0;
+    	    		sb = new StringBuilder(remainder);
+    	    		numOfLines = ("".equals(remainder) ? 0 : 1); // in case we've just hit the end with ' '
+    	    		length = sb.length();
     	    	}
     	        line = bufferedReader.readLine();
     	    }
     	    // ensure everything is uploaded
-    		if(lines.length() > 0) {
-    			uploadChunkFile(lines.toString(), numOfLines, checksum, j++);
+    		if(sb.length() > 0) {
+    			uploadChunkFile(sb.toString(), numOfLines, checksum, j++);
     		}
     	    // increase the fullyUploaded counter
     	    this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$inc", new Document("fullyUploaded", 1)));
@@ -246,7 +253,7 @@ public class DBConnection {
 	 * @return results Document or null if none found 
 	 */
 	public Document getPartialResults(ChunkFileMeta file) {
-		return this.colResults.find(new Document("fileId", file.getId())).first();
+		return this.colResults.find(new Document("_fileId", file.getId())).first();
 	}
 
 	/**
@@ -269,7 +276,7 @@ public class DBConnection {
         });
         
         // download all the relevant results
-        FindIterable<Document> resultsIt = this.colResults.find(new Document("fileId", new Document("$in", ids)));
+        FindIterable<Document> resultsIt = this.colResults.find(new Document("_fileId", new Document("$in", ids)));
         // into list
         List<Document> results = new ArrayList<>();
         resultsIt.into(results);

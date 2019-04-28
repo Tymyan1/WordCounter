@@ -27,8 +27,8 @@ public class App
 {
 	// future args
 	private static final String URI = "mongodb://localhost:27017";
-//	private static final String FILE = "D:\\enwiki-latest-pages-articles-m0ultistream.xml";
-	private static final String FILE = "test.txt";
+	private static final String FILE = "D:\\enwiki-latest-pages-articles-multistream.xml";
+//	private static final String FILE = "test.txt";
 	
     public static void main( String[] args )
     {

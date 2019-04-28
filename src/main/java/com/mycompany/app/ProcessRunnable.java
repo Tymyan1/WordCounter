@@ -43,8 +43,9 @@ public class ProcessRunnable implements Runnable {
 				if(pair != null) {
 					String line = pair.getSecond().trim();
 					// otherwise split(" ") doesn't work 
-					if(!("".equals(line))) {
+					if(!("".equals(line.trim()))) {
 						for(String word : line.split(" ")) {
+							word = word.trim(); // in case of multi spaces ('  ')
 							reduceMap.get(pair.getFirst().getId()).merge(word, 1, (oldValue, one) -> oldValue + one);
 						}	
 					}
