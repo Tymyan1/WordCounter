@@ -1,34 +1,25 @@
 package com.mycompany.app;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
-import java.util.ListIterator;
 import java.util.Map;
-import java.util.Map.Entry;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 
-import com.mongodb.MongoClient;
+import org.bson.Document;
+import org.bson.types.ObjectId;
+
 import com.mongodb.MongoTimeoutException;
-import com.mongodb.client.MongoDatabase;
 
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
-
-import com.mongodb.client.MongoCollection;
-import com.mongodb.Block;
-import org.bson.Document;
-import org.bson.types.ObjectId;
 
 public class App 
 {
