@@ -18,6 +18,11 @@ public class ChunkFile {
 		this.content = content;
 	}
 	
+	public ChunkFile(ChunkFileMeta meta, String content) {
+		this.fileMeta = meta;
+		this.content = content;
+	}
+	
 	public ChunkFileMeta getFileMeta() {
 		return this.fileMeta;
 	}

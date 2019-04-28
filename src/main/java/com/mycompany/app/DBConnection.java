@@ -38,7 +38,9 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import javax.xml.bind.DatatypeConverter;
 
@@ -200,10 +202,14 @@ public class DBConnection {
 	public ChunkFile getNextChunkFile(String checksum) {
 		
 		// find unused file
-		Document fileMeta = this.colMetaFiles.find(new Document("downloaded", 0)).first();
+		Set<ObjectId> locallyProcessedChunks = ChunkDownloadRunnable.processedChunks.stream()
+	              .map(ChunkFileMeta::getId)
+	              .collect(Collectors.toSet());
+		
+		Document fileMeta = this.colMetaFiles.find(new Document("downloaded", 0).append("id", new Document("$nin", locallyProcessedChunks))).first();
 		if(fileMeta == null) {
 			// find a file already being processed
-			fileMeta = this.colMetaFiles.find(new Document("processed", 0)).first();
+			fileMeta = this.colMetaFiles.find(new Document("processed", 0).append("id", new Document("$nin", locallyProcessedChunks))).first();
 			if(fileMeta == null) {
 				// there's nothing more to do
 				//TODO actually maybe stats?
@@ -227,33 +233,30 @@ public class DBConnection {
 			byte[] bytesToWriteTo = new byte[fileLength];
 			downloadStream.read(bytesToWriteTo);
 			
-			ChunkFile chunkFile = new ChunkFile(id, new String(bytesToWriteTo, StandardCharsets.UTF_8));
-			chunkFile.getFileMeta().setChecksum(checksum);
+			ChunkFile chunkFile = new ChunkFile(new ChunkFileMeta(fileMeta), new String(bytesToWriteTo, StandardCharsets.UTF_8));
 			
-			// register the file with the map
-			ProcessRunnable.reduceMap.put(id, new ConcurrentHashMap<String, Integer>());
 			return chunkFile;
 		}
 	}
 	
 	/**
-	 * Uploads results for a given chunk file
-	 * @param file ChunkFileMeta file
+	 * Uploads results for a chunk file with given id
+	 * @param id Chunk file id
 	 * @param results Document results
 	 */
-	public void writePartialResultsToDB(ChunkFileMeta file, Document results) {
+	public void writePartialResultsToDB(ObjectId id, Document results) {
 		this.colResults.insertOne(results);
 		// updates the processed meta
-		this.colMetaFiles.findOneAndUpdate(file.toIdDocument(), new Document("$inc", new Document("processed", 1)));
+		this.colMetaFiles.findOneAndUpdate(new Document("id", id), new Document("$inc", new Document("processed", 1)));
 	}
 	
 	/**
-	 * Returns results for a given chunk file or null if none exist in the database
-	 * @param file ChunkFileMeta metadata
+	 * Returns results for a chunk file with given id or null if none exist in the database
+	 * @param id ObjectId id
 	 * @return results Document or null if none found 
 	 */
-	public Document getPartialResults(ChunkFileMeta file) {
-		return this.colResults.find(new Document("_fileId", file.getId())).first();
+	public Document getPartialResults(ObjectId id) {
+		return this.colResults.find(new Document("_fileId", id)).first();
 	}
 
 	/**
@@ -280,7 +283,7 @@ public class DBConnection {
         // into list
         List<Document> results = new ArrayList<>();
         resultsIt.into(results);
-        
+       
         return results;
 	}
 	
@@ -326,6 +329,16 @@ public class DBConnection {
 	 */
 	public void setFileFinalised(String checksum, int val) {
 		this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$set", new Document("finalised", val)));
+	}
+	
+	/**
+	 * This method is used to correct the 'processed' value in MetaFiles collection after manual editing.
+	 * This is to prevent unexpected behaviour.
+	 * @param id
+	 * @param val
+	 */
+	public void setProcessed(ObjectId id, int val) {
+		this.colMetaFiles.updateOne(new Document("id", id), new Document("$set", new Document("processed", val)));
 	}
 	
 	/**

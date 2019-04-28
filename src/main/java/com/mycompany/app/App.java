@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.TreeMap;
 
 import com.mongodb.MongoClient;
@@ -27,8 +28,9 @@ public class App
 {
 	// future args
 	private static final String URI = "mongodb://localhost:27017";
-	private static final String FILE = "D:\\enwiki-latest-pages-articles-multistream.xml";
+//	private static final String FILE = "D:\\enwiki-latest-pages-articles-multistream.xml";
 //	private static final String FILE = "test.txt";
+	private static final String FILE = "";
 	
     public static void main( String[] args )
     {
@@ -61,13 +63,21 @@ public class App
 	    		// run this as just a worker node until...forever
 	    		//TODO make get this to stop on some user interrupt
 	    		while(true) {
-		    		String checksum = db.getNextTargetFile();
-		    		while(checksum == null) {
-		    			Thread.sleep(5000); //TODO move to config
-		    			checksum = db.getNextTargetFile();
+	    			Thread download = new Thread(new ChunkDownloadRunnable(new DBConnection(URI)));
+	    			download.start(); // starts downloading chunk files
+		    		
+	    			// wait till next chunk file is processed
+	    			ChunkFileMeta next = getNextProcessedMeta();
+		    		while(next == null) {
+		    			Thread.sleep(1000);
+		    			next = getNextProcessedMeta();
 		    		}
-		    		System.out.println("Processing file " + checksum);
-		    		processFile(checksum, db);
+		    		
+		    		// reduce it (inc upload)
+		    		reducePartialResults(next, db);
+	    			
+		    		// final reduce it
+		    		Document results = finalReduce(next.getChecksum(), db);
 	    		}
 	    	}
     	} catch (FileNotFoundException e) {
@@ -110,52 +120,85 @@ public class App
 			while((fileToProcess = db.getNextChunkFile(checksum)) != null) {
 				ObjectId fileId = fileToProcess.getFileMeta().getId();
 				
+				// register the file with the map
+				ProcessRunnable.reduceMap.put(fileId, new ConcurrentHashMap<String, Integer>());
+				
 				fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
     	    	
     	    	ProcessRunnable.linesCounter.put(fileId, 0);
     	    	
     	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
-    	    		Thread.sleep(500);
+    	    		Thread.sleep(1000);
     	    	}
-    	    	
-    	    	System.out.println("Writing results to db");
-    	    	Document results = db.getPartialResults(fileToProcess.getFileMeta());
-    	    	if(results == null) {
-    	    		// no results yet, lets save them
-    				// build the doc
-    				results = new Document("fileId", fileId);
-    				for(String key : ProcessRunnable.reduceMap.get(fileId).keySet()) {
-    					results.append(key, ProcessRunnable.reduceMap.get(fileId).get(key));
-    				}
-    				db.writePartialResultsToDB(fileToProcess.getFileMeta(), results);
-    	    	} else {
-    	    		//TODO what to do when results are already in db? check whether they're same and if not...?
-    	    	}
-    			// clear the maps
-    			ProcessRunnable.reduceMap.get(fileId).clear();
-    			ProcessRunnable.linesCounter.remove(fileId);
+    	    	// reduce the partial results
+    	    	reducePartialResults(fileToProcess.getFileMeta(), db);
 			}
 			// finalise the results
-	    	Document results = db.getFinalResults(checksum);
-			if(results == null) {
-				System.out.println("Processing done, final reducing the results");
-				// download partial results
-				List<Document> partialResults = db.getAllResults(checksum);
-				// reduce
-				results = reduceResults(partialResults);
-				results.append("_fileChecksum", checksum);
-				// upload the final results
-				db.uploadFinalResult(results, checksum);
-			} else {
-				// this should not naturally occur, but fixes unwanted behaviour should 'finalised' be edited manually
-				db.setFileFinalised(checksum, 1);
-			}
+			Document results = finalReduce(checksum, db);
+			// display
 			displayResults(results);
 		} catch (InterruptedException e) {
 			// won't be thrown
 			System.out.println("Interrupted");
 			e.printStackTrace();
 		}
+    }
+    
+    /**
+     * Reduces local results for a given chunk file id and database connection
+     * @param fileId
+     * @param db
+     */
+    private static void reducePartialResults(ChunkFileMeta file, DBConnection db) {
+    	System.out.println("Writing partial results to db");
+    	ObjectId fileId = file.getId();
+    	
+    	Document results = db.getPartialResults(fileId);
+    	if(results == null) {
+    		// no results yet, lets save them
+			// build the doc
+			results = new Document("_fileId", fileId);
+			for(String key : ProcessRunnable.reduceMap.get(fileId).keySet()) {
+				results.append(key, ProcessRunnable.reduceMap.get(fileId).get(key));
+			}
+			db.writePartialResultsToDB(fileId, results);
+    	} else {
+    		// this won't happen naturally, only after manipulating the db manually, but prevents bugs
+    		// if results are there, then surely the file was processed
+    		if(file.getProcessed() == 0) {
+    			db.setProcessed(file.getId(), 1);
+    		}
+    		//TODO what to do when results are already in db? check whether they're same and if not...?
+    	}
+		// clear the maps
+		ProcessRunnable.reduceMap.get(fileId).clear();
+		ProcessRunnable.linesCounter.remove(fileId);
+    }
+    
+    /**
+     * Ensures the reduction of the partial results into final one and uploads to the db. In case the final results
+     * record already exists, downloads that instead.
+     * @param checksum
+     * @param db
+     * @return Document with the results
+     */
+    private static Document finalReduce(String checksum, DBConnection db) {
+    	// finalise the results
+    	Document results = db.getFinalResults(checksum);
+		if(results == null) {
+			System.out.println("Processing done, final reducing the results");
+			// download partial results
+			List<Document> partialResults = db.getAllResults(checksum);
+			// reduce
+			results = reduceResults(partialResults);
+			results.append("_fileChecksum", checksum);
+			// upload the final results
+			db.uploadFinalResult(results, checksum);
+		} else {
+			// this should not naturally occur, but fixes unwanted behaviour should 'finalised' be edited manually
+			db.setFileFinalised(checksum, 1);
+		}
+		return results;
     }
     
     /**
@@ -196,18 +239,31 @@ public class App
     }
 	
 	/**
+	 * Returns the ChunkFileMeta of the next processed chunk file or null if no such exists
+	 * @return ChunkFileMeta
+	 */
+	public static ChunkFileMeta getNextProcessedMeta() {
+		for(ChunkFileMeta meta : ChunkDownloadRunnable.processedChunks) {
+			System.out.println(Arrays.toString(ProcessRunnable.linesCounter.keySet().toArray()));
+			if(meta.getNumOfLines() <= ProcessRunnable.linesCounter.get(meta.getId())) {
+				ChunkDownloadRunnable.processedChunks.remove(meta);
+				return meta;
+			}
+		}
+    	return null;
+    }
+	
+	/**
 	 * Reduces results into a single Document. All Documents in the list provided should be of String => Integer mapping.
 	 * @param results List of partial results
 	 * @return Document containing final results
 	 */
 	private static Document reduceResults(List<Document> results) {
-        
-        //TODO test whether it's faster or not as compared to just using a Document and/or find a better conversion
         // final reduce into map
         Map<String, Integer> finalReduceMap = new HashMap<>();
         for(Document doc : results) {
         	for(String word : doc.keySet()) {
-        		if(!("_id".equals(word) || "fileId".equals(word))) {
+        		if(!("_id".equals(word) || "_fileId".equals(word))) {
         			finalReduceMap.merge(word, doc.getInteger(word), (oldValue, newValue) -> oldValue + newValue);
         		}
         	}
