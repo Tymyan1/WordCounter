@@ -23,13 +23,11 @@ import net.sourceforge.argparse4j.inf.Namespace;
 
 public class App 
 {
-	// future args
-	public static String URI;// = "mongodb://localhost:27017";
-//	private static final String FILE = "D:\\enwiki-latest-pages-articles-multistream.xml";
-//	private static final String FILE = "test.txt";
+	public static String URI;
 	public static String FILE = "";
 	public static int NUM_OF_PROCESS_THREADS;
 	public static int CHUNK_SIZE;
+	public static boolean VIEW;
 	
     public static void main( String[] args )
     {
@@ -57,13 +55,18 @@ public class App
 	        		.type(Integer.class)
 	        		.setDefault(16)
 	                .help("Chunk file size (MB)");
-      
+	        parser.addArgument("-v")
+		    		.dest("view")
+		    		.type(Boolean.class)
+		    		.setDefault(false)
+		            .help("View the results in the console");
     	try {
 	        Namespace res = parser.parseArgs(args);
             URI = res.getString("mongo");
             FILE = res.getString("file");
             NUM_OF_PROCESS_THREADS = res.getInt("workers");
             CHUNK_SIZE = res.getInt("chunkSize");
+            VIEW = res.getBoolean("view");
             
             // setup 
 	    	DBConnection db = new DBConnection(URI);
@@ -169,7 +172,9 @@ public class App
 			// finalise the results
 			Document results = finalReduce(checksum, db);
 			// display
-			displayResults(results);
+			if(VIEW) {
+				displayResults(results);
+			}
 		} catch (InterruptedException e) {
 			// won't be thrown
 			System.out.println("Interrupted");
@@ -250,8 +255,6 @@ public class App
     	List<Map.Entry<String, Object>> list = new ArrayList<>();
 		list.addAll(map.entrySet());
 		
-		
-		System.out.println((list.size() > 10) ? list.size()-1 : 10);
 		List<Map.Entry<String, Object>> topCommon = list.subList(0, (list.size() < 10) ? list.size() : 10);
 		List<Map.Entry<String, Object>> leastCommon = list.subList((list.size() < 10) ? 0 : list.size()-10, list.size());
 		
