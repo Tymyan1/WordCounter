@@ -30,7 +30,7 @@ public abstract class Util {
 		
 		try(InputStream is = new FileInputStream(filename)) {
 		    MessageDigest md = MessageDigest.getInstance("MD5");
-		    byte[] buffer = new byte[8*1024]; // or any other size
+		    byte[] buffer = new byte[8*1024*1024]; // or any other size
 		    int len;
 		    while ((len = is.read(buffer)) != -1)
 		    {
