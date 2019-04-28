@@ -19,6 +19,12 @@ import java.util.TreeMap;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoTimeoutException;
 import com.mongodb.client.MongoDatabase;
+
+import net.sourceforge.argparse4j.ArgumentParsers;
+import net.sourceforge.argparse4j.inf.ArgumentParser;
+import net.sourceforge.argparse4j.inf.ArgumentParserException;
+import net.sourceforge.argparse4j.inf.Namespace;
+
 import com.mongodb.client.MongoCollection;
 import com.mongodb.Block;
 import org.bson.Document;
@@ -27,17 +33,51 @@ import org.bson.types.ObjectId;
 public class App 
 {
 	// future args
-	private static final String URI = "mongodb://localhost:27017";
+	public static String URI;// = "mongodb://localhost:27017";
 //	private static final String FILE = "D:\\enwiki-latest-pages-articles-multistream.xml";
 //	private static final String FILE = "test.txt";
-	private static final String FILE = "";
+	public static String FILE = "";
+	public static int NUM_OF_PROCESS_THREADS;
+	public static int CHUNK_SIZE;
 	
     public static void main( String[] args )
     {
+    	// argument parsing
+		 ArgumentParser parser = ArgumentParsers.newFor("Wordcount").build()
+	                .defaultHelp(true)
+	                .description("Count words in the file");
+		 	parser.addArgument("-m", "--mongo")
+		 			.dest("mongo")
+		     		.type(String.class)
+		     		.setDefault("mongodb://localhost:27017")
+		            .help("MongoDB URI (e.g. mongodb://localhost:27017)");
+		 	parser.addArgument("-f", "--file")
+		 			.dest("file")
+	        		.type(String.class)
+	        		.setDefault("")
+	                .help("Input file");
+	        parser.addArgument("-w", "--workers")
+	        		.dest("workers")
+	        		.type(Integer.class)
+	        		.setDefault(2)
+	                .help("Number of processing threads");
+	        parser.addArgument("--chunk-size")
+	        		.dest("chunkSize")
+	        		.type(Integer.class)
+	        		.setDefault(16)
+	                .help("Chunk file size (MB)");
+      
     	try {
+	        Namespace res = parser.parseArgs(args);
+            URI = res.getString("mongo");
+            FILE = res.getString("file");
+            NUM_OF_PROCESS_THREADS = res.getInt("workers");
+            CHUNK_SIZE = res.getInt("chunkSize");
+            
+            // setup 
 	    	DBConnection db = new DBConnection(URI);
 	    	List<Thread> processThreads = new ArrayList<>();
-	    	for(int i = 0; i < ProcessRunnable.NUM_OF_PROCESS_THREADS; i++) {
+	    	for(int i = 0; i < NUM_OF_PROCESS_THREADS; i++) {
 	    		processThreads.add(new Thread(new ProcessRunnable()));
 	    	}
 	    	
@@ -92,7 +132,9 @@ public class App
     	} catch (InterruptedException e) {
 			// this should never be thrown
 			e.printStackTrace();
-		}
+	    } catch (ArgumentParserException e) {
+	        parser.handleError(e);
+	    }
     }
     
     /**

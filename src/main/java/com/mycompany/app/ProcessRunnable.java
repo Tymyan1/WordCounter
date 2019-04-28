@@ -15,8 +15,6 @@ import org.bson.types.ObjectId;
  *
  */
 public class ProcessRunnable implements Runnable {
-
-	public static final int NUM_OF_PROCESS_THREADS = 2;
 	
 	/**
 	 * Stores parts of the file yet to be processed by the ProcessRunnable.

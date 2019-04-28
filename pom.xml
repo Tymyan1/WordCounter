@@ -31,10 +31,15 @@
         <version>3.4.3</version>
     </dependency>
     <dependency>
-    <groupId>com.joyent.util</groupId>
-    <artifactId>fast-md5</artifactId>
-    <version>2.7.1</version>
-</dependency>
+	    <groupId>com.joyent.util</groupId>
+	    <artifactId>fast-md5</artifactId>
+	    <version>2.7.1</version>
+	</dependency>
+	<dependency>
+	  <groupId>net.sourceforge.argparse4j</groupId>
+	  <artifactId>argparse4j</artifactId>
+	  <version>0.8.1</version>
+	</dependency>
   </dependencies>
 
   <build>

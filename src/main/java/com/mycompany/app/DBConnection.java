@@ -128,7 +128,7 @@ public class DBConnection {
 		// register the file
 		this.colFileRegister.insertOne(new Document("checksum", checksum).append("fullyUploaded", 0).append("finalised", 0));
 		
-		final int charFileSize = 1024*1024*16 / Character.SIZE; //TODO move into config or similar
+		final int charFileSize = App.CHUNK_SIZE * 1024*1024 / Character.SIZE; // MB
 		final int bufferSize = 8 * 1024;
 		
 		// start reading the file
