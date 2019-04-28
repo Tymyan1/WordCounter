@@ -230,31 +230,23 @@ public class DBConnection {
 	}
 	
 	/**
-	 * Given a chunk file meta, collects the partial results from ProcessRunnable.reduceMap and uploads them to the database
-	 * @param file
+	 * Uploads results for a given chunk file
+	 * @param file ChunkFileMeta file
+	 * @param results Document results
 	 */
-	//TODO refactor
-	public void writeReducedResultsToDB(ChunkFileMeta file) {
-		// check whether the results already exist (some1 already done the job?)
-		Document existingResult = this.colResults.find(new Document("fileId", file.getId())).first();
-		if(existingResult == null) {
-			// no results yet, lets save them
-			// build the doc
-			Document results = new Document("fileId", file.getId());
-			for(String key : ProcessRunnable.reduceMap.get(file.getId()).keySet()) {
-				results.append(key, ProcessRunnable.reduceMap.get(file.getId()).get(key));
-			}
-			// save it
-			this.colResults.insertOne(results);
-		} else {
-			//TODO what to do if results already computed? save a duplicate in case they differ and let the 'merge-results' method decide?
-			System.out.println("Results document already exists ( id: " + existingResult.get("_id") + ")");
-		}
+	public void writePartialResultsToDB(ChunkFileMeta file, Document results) {
+		this.colResults.insertOne(results);
 		// updates the processed meta
 		this.colMetaFiles.findOneAndUpdate(file.toIdDocument(), new Document("$inc", new Document("processed", 1)));
-		
-		// clear the map
-		ProcessRunnable.reduceMap.get(file.getId()).clear();
+	}
+	
+	/**
+	 * Returns results for a given chunk file or null if none exist in the database
+	 * @param file ChunkFileMeta metadata
+	 * @return results Document or null if none found 
+	 */
+	public Document getPartialResults(ChunkFileMeta file) {
+		return this.colResults.find(new Document("fileId", file.getId())).first();
 	}
 
 	/**

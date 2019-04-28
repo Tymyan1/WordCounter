@@ -104,16 +104,32 @@ public class App
 			// get and process all the chunk files
 			ChunkFile fileToProcess;
 			while((fileToProcess = db.getNextChunkFile(checksum)) != null) {
+				ObjectId fileId = fileToProcess.getFileMeta().getId();
+				
 				fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
     	    	
-    	    	ProcessRunnable.linesCounter.put(fileToProcess.getFileMeta().getId(), 0);
+    	    	ProcessRunnable.linesCounter.put(fileId, 0);
     	    	
     	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
     	    		Thread.sleep(500);
     	    	}
     	    	
     	    	System.out.println("Writing results to db");
-    	    	db.writeReducedResultsToDB(fileToProcess.getFileMeta());
+    	    	Document results = db.getPartialResults(fileToProcess.getFileMeta());
+    	    	if(results == null) {
+    	    		// no results yet, lets save them
+    				// build the doc
+    				results = new Document("fileId", fileId);
+    				for(String key : ProcessRunnable.reduceMap.get(fileId).keySet()) {
+    					results.append(key, ProcessRunnable.reduceMap.get(fileId).get(key));
+    				}
+    				db.writePartialResultsToDB(fileToProcess.getFileMeta(), results);
+    	    	} else {
+    	    		//TODO what to do when results are already in db? check whether they're same and if not...?
+    	    	}
+    			// clear the maps
+    			ProcessRunnable.reduceMap.get(fileId).clear();
+    			ProcessRunnable.linesCounter.remove(fileId);
 			}
 			// finalise the results
 	    	Document results = db.getFinalResults(checksum);
