@@ -7,7 +7,7 @@ Two different 'modes' of the program exists - should the path to a given text fi
 * __-m, --mongo:__	Mongo database URI, default: _mongodb://localhost:27017_
 * __-f, --file:__ Input file. If unspecified, runs as the _worker process_
 * __-w, --workers:__ Number of processing threads, default: 4
-* __-v, --view:__ The number of most/least words in the file to print, default: 10
+* __-v, --view:__ The number of most/least common words in the file to print, 0 to see all results, -1 for none, default: 0
 * __--chunk-size__ The (MB) size of chunk files
 
 
