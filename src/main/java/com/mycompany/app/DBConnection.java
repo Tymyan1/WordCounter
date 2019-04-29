@@ -12,6 +12,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import org.bson.Document;
@@ -40,7 +42,13 @@ import com.mongodb.client.model.Indexes;
  *
  */
 public class DBConnection {
-
+	
+	static {
+		// turn off the mongodb logging
+		Logger mongoLogger = Logger.getLogger( "org.mongodb.driver" );
+		mongoLogger.setLevel(Level.OFF);
+	}
+	
 	public final String URI;
 	private MongoClient client;
 	private MongoDatabase db;
@@ -95,7 +103,7 @@ public class DBConnection {
   
 		switch(fileUploaded(checksum)) {
 		case FULL_UPLOAD:
-			System.out.println("File already seems to be uploaded!");
+			System.out.println("File already seems to be uploaded");
 			return checksum;
 		case PARTIAL_UPLOAD:
 			System.out.println("Found partial upload, clearing up...");
@@ -137,6 +145,7 @@ public class DBConnection {
     	    		// find the last word
     	    		String s = sb.toString();
     	    		int index = s.lastIndexOf(' ');
+    	    		index = (index >= 0) ? index : s.length(); // there might be just 1 word in the line
     	    		String content = s.substring(0, index);
     	    		String remainder = s.substring(index); // starts with ' ' 
     	    		
@@ -252,7 +261,7 @@ public class DBConnection {
 	 * @param checksum
 	 * @return results in List<Document>
 	 */
-	public List<Document> getAllResults(String checksum) {
+	public List<Document> getAllPartialResults(String checksum) {
 		// get all the chunkfile meta documents
 		FindIterable<Document> chunkFileMetas = this.colMetaFiles.find(new Document("checksum", checksum));
    
@@ -280,12 +289,13 @@ public class DBConnection {
 	 * @param checksum
 	 */
 	public void uploadFinalResult(Document finalResults, String checksum) {
-		// upload results
-		
-		this.colFinalResults.insertOne(finalResults);
-		// acknowledge in file register
-		this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$inc", new Document("finalised", 1)));
-      
+		// don't upload if results already there
+		if(this.colFinalResults.find(new Document("checksum", checksum)).first() == null) {
+			// upload results
+			this.colFinalResults.insertOne(finalResults);
+			// acknowledge in file register
+			this.colFileRegister.updateOne(new Document("checksum", checksum), new Document("$inc", new Document("finalised", 1)));
+		}
 	}
 	
 	/**
@@ -294,7 +304,7 @@ public class DBConnection {
 	 * @return Final results Document or null if final results not present for given checksum
 	 */
 	public Document getFinalResults(String checksum) {
-		Document doc = this.colFinalResults.find(new Document("_fileChecksum", checksum)).first();
+		Document doc = this.colFinalResults.find(new Document("checksum", checksum)).first();
 		return doc;
 	}
 	
@@ -303,7 +313,6 @@ public class DBConnection {
 	 * @return Checksum of the file
 	 */
 	public String getNextTargetFile() {
-		// get the next chunk file not being processed
 		Document fileRegister = this.colFileRegister.find(new Document("finalised", 0).append("fullyUploaded", new Document("$gt", 0))).first();
 		if(fileRegister == null) return null;
 		return fileRegister.getString("checksum");
@@ -327,6 +336,15 @@ public class DBConnection {
 	 */
 	public void setProcessed(ObjectId id, int val) {
 		this.colMetaFiles.updateOne(new Document("id", id), new Document("$set", new Document("processed", val)));
+	}
+	
+	/**
+	 * Checks whether all partial results for a file specified by a checksum are available 
+	 * @param checksum
+	 * @return True if all partial results are in the database, false otherwise
+	 */
+	public boolean isToBeFinalised(String checksum) {
+		return this.colMetaFiles.count(new Document("checksum", checksum)) == this.colResults.count(new Document("checksum", checksum));
 	}
 	
 	/**

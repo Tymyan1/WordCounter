@@ -4,6 +4,8 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.bson.types.ObjectId;
+
 /**
  * Runnable responsible for downloading chunk files once the processing queue has under DOWNLOAD_THRESHOLD
  * tokens to consume.
@@ -11,12 +13,15 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  */
 public class ChunkDownloadRunnable implements Runnable {
-
+	
 	/**
 	 * Number of tokens in the process queue to (attempt to) start downloading the next chunk file
 	 */
 	public static final int DOWNLOAD_THRESHOLD = 1000;
 	
+	/**
+	 * Chunk files that are currently being processed by this process
+	 */
 	public static final Set<ChunkFileMeta> processedChunks = new HashSet<>(); 
 	
 	private final DBConnection db;
@@ -42,21 +47,29 @@ public class ChunkDownloadRunnable implements Runnable {
 						}
 						this.setChecksum(next);
 						System.out.println("Processing new file: " + next);
-						
 						// get the file
 						file = this.db.getNextChunkFile(this.getCurChecksum());
-						System.out.println("Gotten new chunk file");
+						if(file == null) {
+							// all chunk files processed but final results not finalised
+							// pass through a dummy 
+							ChunkFileMeta dummy = new ChunkFileMeta(new ObjectId("000000000000000000000000"), 0);
+							dummy.setChecksum(next);
+							dummy.setNumOfLines(0);
+							file = new ChunkFile(dummy, "");
+						} else {
+							System.out.println("Got a new chunk file");
+						}
 					}
-					// split and push
+			    	// register
+					ProcessRunnable.reduceMap.put(file.getFileMeta().getId(), new ConcurrentHashMap<String, Integer>());
+			    	ProcessRunnable.linesCounter.put(file.getFileMeta().getId(), 0);
+			    	processedChunks.add(file.getFileMeta());
+			    	
+			    	// split and push
 					String[] lines = file.getContent().split(System.lineSeparator());
 			    	for(String line : lines) {
 			    		ProcessRunnable.linesToProcess.add(new Pair<ChunkFileMeta, String>(file.getFileMeta(), line));
 			    	}
-			    	// register
-			    	// register the file with the map
-					ProcessRunnable.reduceMap.put(file.getFileMeta().getId(), new ConcurrentHashMap<String, Integer>());
-			    	ProcessRunnable.linesCounter.put(file.getFileMeta().getId(), 0);
-			    	processedChunks.add(file.getFileMeta());
 				}
 				Thread.sleep(1000);
 			}

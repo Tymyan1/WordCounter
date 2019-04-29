@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.bson.types.ObjectId;
 
@@ -29,6 +30,8 @@ public class ProcessRunnable implements Runnable {
 	 * Counter used to determine whether processing of a given chunk file has been completed.
 	 */
 	public static final Map<ObjectId, Integer> linesCounter = new ConcurrentHashMap<>();
+	
+	public static AtomicInteger i = new AtomicInteger(0);
 
 	@Override
 	public void run() {
@@ -38,6 +41,7 @@ public class ProcessRunnable implements Runnable {
 			try {
 				pair = linesToProcess.take();
 				if(pair != null) {
+					i.incrementAndGet();
 					String line = pair.getSecond().trim();
 					// otherwise split(" ") doesn't work 
 					if(!("".equals(line.trim()))) {

@@ -4,11 +4,10 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.bson.Document;
@@ -27,7 +26,7 @@ public class App
 	public static String FILE = "";
 	public static int NUM_OF_PROCESS_THREADS;
 	public static int CHUNK_SIZE;
-	public static boolean VIEW;
+	public static int VIEW;
 	
     public static void main( String[] args )
     {
@@ -48,25 +47,25 @@ public class App
 	        parser.addArgument("-w", "--workers")
 	        		.dest("workers")
 	        		.type(Integer.class)
-	        		.setDefault(2)
-	                .help("Number of processing threads");
+	        		.setDefault(4)
+	                .help("Number of processing threads, default: 4");
 	        parser.addArgument("--chunk-size")
 	        		.dest("chunkSize")
 	        		.type(Integer.class)
 	        		.setDefault(16)
-	                .help("Chunk file size (MB)");
+	                .help("Chunk file size (MB), default: 16");
 	        parser.addArgument("-v")
 		    		.dest("view")
-		    		.type(Boolean.class)
-		    		.setDefault(false)
-		            .help("View the results in the console");
+		    		.type(Integer.class)
+		    		.setDefault(0)
+		            .help("View the top and least X results in the console, 0 for viewing all results (desc), -1 for none, default: 0");
     	try {
 	        Namespace res = parser.parseArgs(args);
             URI = res.getString("mongo");
             FILE = res.getString("file");
             NUM_OF_PROCESS_THREADS = res.getInt("workers");
             CHUNK_SIZE = res.getInt("chunkSize");
-            VIEW = res.getBoolean("view");
+            VIEW = res.getInt("view");
             
             // setup 
 	    	DBConnection db = new DBConnection(URI);
@@ -75,7 +74,7 @@ public class App
 	    		processThreads.add(new Thread(new ProcessRunnable()));
 	    	}
 	    	
-	    	System.out.println("Running process threads");
+	    	// run process threads
 	    	for(Thread t : processThreads) {
 	    		t.start();
 	    	}
@@ -94,12 +93,12 @@ public class App
 		    	}
 		    	
 	    	} else {
-	    		// run this as just a worker node until...forever
+	    		Thread download = new Thread(new ChunkDownloadRunnable(new DBConnection(URI)));
+    			download.start(); // starts downloading chunk files
+    			System.out.println("Running...");
+    			// run this as just a worker node until...forever
 	    		//TODO make get this to stop on some user interrupt
 	    		while(true) {
-	    			Thread download = new Thread(new ChunkDownloadRunnable(new DBConnection(URI)));
-	    			download.start(); // starts downloading chunk files
-		    		
 	    			// wait till next chunk file is processed
 	    			ChunkFileMeta next = getNextProcessedMeta();
 		    		while(next == null) {
@@ -107,24 +106,29 @@ public class App
 		    			next = getNextProcessedMeta();
 		    		}
 		    		
-		    		// reduce it (inc upload)
-		    		reducePartialResults(next, db);
+		    		System.out.println("Writing partial results to db");
+	    			reduceAndSavePartialResults(next, db);
 	    			
 		    		// final reduce it
-		    		Document results = finalReduce(next.getChecksum(), db);
+	    			if(db.isToBeFinalised(next.getChecksum())) {
+		    			System.out.println("Processing done, reducing to get the final results");
+			    		Document results = finalReduce(next.getChecksum(), db);
+			    		
+			    		// save
+			    		db.uploadFinalResult(results, next.getChecksum());
+	    			}
 	    		}
 	    	}
     	} catch (FileNotFoundException e) {
     		System.out.println("File not found, please check the path given");
 //    		e.printStackTrace();
     	} catch (MongoTimeoutException e) {
-    		//TODO this is being thrown from daemon and prints stack trace elsewhere, ideally disable that somehow
-    		System.out.println("Connection to the database failed, please restart");
+    		System.out.println("Connection to the database failed, please try again");
     	} catch (IOException e) {
 //    		e.printStackTrace();
     		System.out.println("An unexpected error with processing the file occured");
     	} catch (InterruptedException e) {
-			// this should never be thrown
+    		Thread.currentThread().interrupt();
 			e.printStackTrace();
 	    } catch (ArgumentParserException e) {
 	        parser.handleError(e);
@@ -159,21 +163,23 @@ public class App
 				// register the file with the map
 				ProcessRunnable.reduceMap.put(fileId, new ConcurrentHashMap<String, Integer>());
 				
-				fileToProcess.getFileMeta().setNumOfLines((splitLines(fileToProcess)));
-    	    	
+				splitLines(fileToProcess);
+				
     	    	ProcessRunnable.linesCounter.put(fileId, 0);
     	    	
     	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
     	    		Thread.sleep(1000);
     	    	}
     	    	// reduce the partial results
-    	    	reducePartialResults(fileToProcess.getFileMeta(), db);
+    	    	System.out.println("Writing partial results to db");
+    	    	reduceAndSavePartialResults(fileToProcess.getFileMeta(), db);
 			}
 			// finalise the results
+			System.out.println("Processing done, reducing to get the final results");
 			Document results = finalReduce(checksum, db);
 			// display
-			if(VIEW) {
-				displayResults(results);
+			if(VIEW > 0) {
+				displayResults(results, VIEW);
 			}
 		} catch (InterruptedException e) {
 			// won't be thrown
@@ -187,19 +193,21 @@ public class App
      * @param fileId
      * @param db
      */
-    private static void reducePartialResults(ChunkFileMeta file, DBConnection db) {
-    	System.out.println("Writing partial results to db");
+    private static void reduceAndSavePartialResults(ChunkFileMeta file, DBConnection db) {
     	ObjectId fileId = file.getId();
     	
     	Document results = db.getPartialResults(fileId);
     	if(results == null) {
     		// no results yet, lets save them
 			// build the doc
-			results = new Document("_fileId", fileId);
+			List<Document> wordResults = new ArrayList<>();
 			for(String key : ProcessRunnable.reduceMap.get(fileId).keySet()) {
-				results.append(key, ProcessRunnable.reduceMap.get(fileId).get(key));
+				wordResults.add(new Document("word", key).append("value", ProcessRunnable.reduceMap.get(fileId).get(key)));
 			}
-			db.writePartialResultsToDB(fileId, results);
+			results = new Document("_fileId", fileId).append("checksum", file.getChecksum()).append("results", wordResults);
+			// save
+			if(!wordResults.isEmpty())
+				db.writePartialResultsToDB(fileId, results);
     	} else {
     		// this won't happen naturally, only after manipulating the db manually, but prevents bugs
     		// if results are there, then surely the file was processed
@@ -209,7 +217,7 @@ public class App
     		//TODO what to do when results are already in db? check whether they're same and if not...?
     	}
 		// clear the maps
-		ProcessRunnable.reduceMap.get(fileId).clear();
+		ProcessRunnable.reduceMap.remove(fileId);
 		ProcessRunnable.linesCounter.remove(fileId);
     }
     
@@ -224,12 +232,11 @@ public class App
     	// finalise the results
     	Document results = db.getFinalResults(checksum);
 		if(results == null) {
-			System.out.println("Processing done, final reducing the results");
 			// download partial results
-			List<Document> partialResults = db.getAllResults(checksum);
+			List<Document> partialResults = db.getAllPartialResults(checksum);
 			// reduce
 			results = reduceResults(partialResults);
-			results.append("_fileChecksum", checksum);
+			results.append("checksum", checksum);
 			// upload the final results
 			db.uploadFinalResult(results, checksum);
 		} else {
@@ -240,29 +247,41 @@ public class App
     }
     
     /**
-     * Method to display the results.
-     * @param results
+     * Method to display the sorted results.
+     * @param results Final results document
+     * @param topX Number of most and least counted words
      */
-    public static void displayResults(Document results) {
-    	Map<String, Object> map = new TreeMap<>();
-    	map.putAll((Map<String, Object>)results);
+	public static void displayResults(Document results, int topX) {
+    	@SuppressWarnings("unchecked")
+		List<Document> wordResults = ((List<Document>) results.get("results"));
+    	wordResults.sort(new Comparator<Document> () {
+			@Override
+			public int compare(Document d1, Document d2) {
+				return d1.getInteger("value", 0) - d2.getInteger("value", 0);
+			}
+    	});
     	
-    	// remove metafields
-    	map.remove("_id");
-    	map.remove("_fileChecksum");
-    	
-    	// put results into a list (for easier results access)
-    	List<Map.Entry<String, Object>> list = new ArrayList<>();
-		list.addAll(map.entrySet());
-		
-		List<Map.Entry<String, Object>> topCommon = list.subList(0, (list.size() < 10) ? list.size() : 10);
-		List<Map.Entry<String, Object>> leastCommon = list.subList((list.size() < 10) ? 0 : list.size()-10, list.size());
-		
-		System.out.println("Top 10 common words: ");
-		System.out.println(topCommon);
-		
-		System.out.println("Top 10 least common words: ");
-		System.out.println(leastCommon);
+		if(topX == 0) {
+			// display all
+			System.out.format("%s%30s%n", "word", "count");
+			for(Document d : wordResults) {
+				System.out.format("%s%30d%n", d.getString("word"), d.getInteger("value"));
+			}
+		} else {
+			List<Document> top = wordResults.subList(0, (wordResults.size() < topX) ? wordResults.size() : topX);
+	    	List<Document> bot = wordResults.subList((wordResults.size() < topX) ? 0 : wordResults.size()-topX, wordResults.size());
+	    	
+			System.out.format("Top %d common words:%n", topX);
+			System.out.format("%s%30s%n", "word", "count");
+			for(Document d : top) {
+				System.out.format("%s%30d%n", d.getString("word"), d.getInteger("value"));
+			}
+			System.out.format("Top %d least common words:%n", topX);
+			System.out.format("%s%30s%n", "word", "count");
+			for(Document d : bot) {
+				System.out.format("%s%30d%n", d.getString("word"), d.getInteger("value"));
+			}	
+		}
     }
     
     /**
@@ -280,7 +299,6 @@ public class App
 	 */
 	public static ChunkFileMeta getNextProcessedMeta() {
 		for(ChunkFileMeta meta : ChunkDownloadRunnable.processedChunks) {
-			System.out.println(Arrays.toString(ProcessRunnable.linesCounter.keySet().toArray()));
 			if(meta.getNumOfLines() <= ProcessRunnable.linesCounter.get(meta.getId())) {
 				ChunkDownloadRunnable.processedChunks.remove(meta);
 				return meta;
@@ -295,21 +313,25 @@ public class App
 	 * @return Document containing final results
 	 */
 	private static Document reduceResults(List<Document> results) {
-        // final reduce into map
+		// flatten
+		List<Document> flatten = new ArrayList<>();
+		for(Document doc : results) {
+			flatten.addAll((List<Document>) doc.get("results"));
+		}
+		
+        // final reduce into sorted map
         Map<String, Integer> finalReduceMap = new HashMap<>();
-        for(Document doc : results) {
-        	for(String word : doc.keySet()) {
-        		if(!("_id".equals(word) || "_fileId".equals(word))) {
-        			finalReduceMap.merge(word, doc.getInteger(word), (oldValue, newValue) -> oldValue + newValue);
-        		}
-        	}
+        for(Document doc : flatten) {
+			finalReduceMap.merge(doc.getString("word"), doc.getInteger("value"), (oldValue, newValue) -> oldValue + newValue);
         }
         
         // into document
-        Document finalResults = new Document();
+        List<Document> resultsByWords = new ArrayList<>();
         for(String key : finalReduceMap.keySet()) {
-        	finalResults.append(key, finalReduceMap.get(key));
+        	resultsByWords.add(new Document("word", key).append("value", finalReduceMap.get(key)));
         }
+        Document finalResults = new Document("results", resultsByWords);
+        
         return finalResults;
 
 	}
