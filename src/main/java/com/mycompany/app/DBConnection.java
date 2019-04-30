@@ -242,9 +242,6 @@ public class DBConnection {
 				wasRead += r;
 			}
 			
-			String test1 = sb.toString();
-			System.out.println(test1.split(System.lineSeparator()).length);
-			
 			ChunkFile chunkFile = new ChunkFile(new ChunkFileMeta(fileMeta), sb.toString());
 			
 			return chunkFile;
