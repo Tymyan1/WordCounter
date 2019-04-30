@@ -97,7 +97,9 @@ Having started working on this project I head near zero experience with NoSQL an
 
 Currently the final results are not sorted when uploaded and the sorting is done for each viewing of the results by downloading all the records and sorting in the Java application. This is ineffective and the results should ideally be either sorted via MongoDB itself using the _$sort_ or sorted using the same mechanism on each download.
 
-Additionally several racing conditions exist in several methods, which could be dealt with using transactions and/or nested documents. Example of this is checking whether a document with results for a given file exists in one step and uploading a new document if none exists.
+Additionally several racing conditions exist in several methods, which could be dealt with using transactions and/or nested documents. Example of this is checking whether a document with results for a given file exists in one step and uploading a new document if none exists. The effects of these conditions are be however however mitigating by using unique indexes.
+
+Another problem with the structure is the MongoDB document size limit making the application fail should the results documents be too large (too many unique words).
 
 ### Callbacks
 All the concurrency dependencies (threads waiting for each other) are currently handled by sleeping the threads and waiting for a given amount of time. While this is fine when waiting for new content in the database, the internal waits could be replaced with callbacks. This would make the code more complex, but would increase the effectiveness of the program
