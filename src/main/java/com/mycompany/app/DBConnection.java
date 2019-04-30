@@ -224,13 +224,28 @@ public class DBConnection {
 		GridFSFile file = found.first();
 		ObjectId id = file.getObjectId();
 		
+		
+		
+		
 		// download it
 		try (GridFSDownloadStream  downloadStream = this.fileBucket.openDownloadStream(id)) {
-			int fileLength = (int) downloadStream.getGridFSFile().getLength();
-			byte[] bytesToWriteTo = new byte[fileLength];
-			downloadStream.read(bytesToWriteTo);
+			final long fileLength = downloadStream.getGridFSFile().getLength();
+			final int chunkSize = 1024;
+			long wasRead = 0;
+			byte[] bytesToWriteTo = new byte[chunkSize];
+			StringBuilder sb = new StringBuilder();
+			while(wasRead < fileLength) {
+				int r = downloadStream.read(bytesToWriteTo);
+				String chunk = new String(bytesToWriteTo, StandardCharsets.UTF_8);
+
+				sb.append(chunk);
+				wasRead += r;
+			}
 			
-			ChunkFile chunkFile = new ChunkFile(new ChunkFileMeta(fileMeta), new String(bytesToWriteTo, StandardCharsets.UTF_8));
+			String test1 = sb.toString();
+			System.out.println(test1.split(System.lineSeparator()).length);
+			
+			ChunkFile chunkFile = new ChunkFile(new ChunkFileMeta(fileMeta), sb.toString());
 			
 			return chunkFile;
 		}
@@ -357,6 +372,21 @@ public class DBConnection {
 	private void uploadChunkFile(String lines, int numOfLines, String checksum, int it) {
 		try {
 			InputStream stream = new ByteArrayInputStream(lines.getBytes("UTF-8") );
+			
+//			OutputStream test = new FileOutputStream(new File(checksum + it + ".txt"));
+//			byte[] bytes = new byte[1024];
+//			int a;
+//			do {
+//				a = stream.read(bytes);
+//				String chunk = new String(bytes);
+//				if(a < 0) break;
+//				if(a < 1024) {
+//					chunk = chunk.substring(0, a);
+//				}
+//				test.write(chunk.getBytes());
+//			} while(a > 0);
+//			test.close();
+			
 		    // Create some custom options
 		    GridFSUploadOptions options = new GridFSUploadOptions()
 		                                        .metadata(new Document("checksum", checksum)

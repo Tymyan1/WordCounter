@@ -162,10 +162,9 @@ public class App
 				
 				// register the file with the map
 				ProcessRunnable.reduceMap.put(fileId, new ConcurrentHashMap<String, Integer>());
+				ProcessRunnable.linesCounter.put(fileId, 0);
 				
 				splitLines(fileToProcess);
-				
-    	    	ProcessRunnable.linesCounter.put(fileId, 0);
     	    	
     	    	while(!checkIfProcessingFinished(fileToProcess.getFileMeta())) {
     	    		Thread.sleep(1000);
